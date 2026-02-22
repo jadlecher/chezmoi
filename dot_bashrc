@@ -1,0 +1,35 @@
+# Test for an interactive shell
+if [[ $- != *i* ]]; then
+  # Shell is non-interactive.  Be done now!
+  return
+fi
+
+# User specific aliases and functions
+if [ -f ~/.bash_aliases ]; then
+  . "$HOME/.bash_aliases"
+fi
+
+# bash history options
+HISTSIZE=100000
+HISTCONTROL=ignorespace:ignoredups:erasedups
+
+alias vi="nvim"
+alias vim="nvim"
+export VISUAL=/usr/bin/nvim
+export EDITOR=/usr/bin/nvim
+
+# options related to kubectl
+kubectl_alias=k
+alias ${kubectl_alias}=kubectl
+complete -o default -F __start_kubectl ${kubectl_alias}
+
+# Configure AI API keys and other local secrets outside chezmoi source.
+if [ -f "$HOME/.config/shell/secrets.local" ]; then
+  . "$HOME/.config/shell/secrets.local"
+fi
+
+# Add user bin to PATH
+export PATH=~/.local/bin:$PATH
+
+# Add user npm binaries to PATH
+export PATH=~/.npm-global/bin:$PATH
