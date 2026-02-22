@@ -104,7 +104,7 @@ def start_wallpaper_daemon():
 
 
 def set_wallpaper(output: str, path: str):
-    subprocess.run(
+    process = subprocess.run(
         [
             "swww",
             "img",
@@ -121,6 +121,7 @@ def set_wallpaper(output: str, path: str):
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     )
+    return process.returncode == 0
 
 
 def get_output(outputs: list[dict], desc: str) -> str | None:
@@ -133,8 +134,9 @@ def get_output(outputs: list[dict], desc: str) -> str | None:
     return None
 
 
-def apply_wallpaper_config(theme: str, config: str):
+def apply_wallpaper_config(theme: str, config: str) -> int:
     outputs = get_outputs()
+    applied = 0
     desc_pattern = re.compile("^desc:(.+)")
     with open(config, "r") as file:
         for display, options in yaml.safe_load(file).items():
@@ -145,32 +147,71 @@ def apply_wallpaper_config(theme: str, config: str):
                 output = get_output(outputs, desc)
             if theme in options and output is not None:
                 wallpaper = options[theme]
-                set_wallpaper(output, wallpaper)
+                if set_wallpaper(output, wallpaper):
+                    applied += 1
+    return applied
+
+
+def restore_wallpapers(theme: str, config: str, retries: int, retry_delay: float):
+    start_wallpaper_daemon()
+    for attempt in range(retries):
+        try:
+            if apply_wallpaper_config(theme, config) > 0:
+                return
+        except (subprocess.CalledProcessError, json.JSONDecodeError, KeyError):
+            pass
+        if attempt + 1 < retries:
+            time.sleep(retry_delay)
+    raise RuntimeError("failed to apply wallpapers to any output")
 
 
 parser = argparse.ArgumentParser(prog="set-theme")
 parser.add_argument(
     "-i",
     "--input-dir",
-    required=True,
     help="A directory containing the input configuration files",
 )
 parser.add_argument(
     "-o",
     "--output-dir",
-    required=True,
     help="A directory containing the output configuration files",
 )
 parser.add_argument("-w", "--wallpaper-config", help="The wallpaper configuration file")
+parser.add_argument(
+    "--wallpaper-only",
+    action="store_true",
+    help="Only apply wallpapers and skip config symlink updates",
+)
+parser.add_argument(
+    "--wallpaper-retries",
+    type=int,
+    default=1,
+    help="Number of attempts to apply wallpapers",
+)
+parser.add_argument(
+    "--wallpaper-retry-delay",
+    type=float,
+    default=0.2,
+    help="Delay in seconds between wallpaper apply attempts",
+)
 args = parser.parse_args()
 
 theme = get_system_theme()
-files = list_config_files(args.input_dir)
-files = filter_inapplicable_config_files(theme, files)
-input_dir = os.path.abspath(args.input_dir)
-output_dir = os.path.abspath(args.output_dir)
-sync_dir(input_dir, output_dir, files)
+if not args.wallpaper_only:
+    if not args.input_dir or not args.output_dir:
+        parser.error("--input-dir and --output-dir are required unless --wallpaper-only is set")
+    files = list_config_files(args.input_dir)
+    files = filter_inapplicable_config_files(theme, files)
+    input_dir = os.path.abspath(args.input_dir)
+    output_dir = os.path.abspath(args.output_dir)
+    sync_dir(input_dir, output_dir, files)
 
 if args.wallpaper_config:
-    start_wallpaper_daemon()
-    apply_wallpaper_config(theme, args.wallpaper_config)
+    restore_wallpapers(
+        theme,
+        args.wallpaper_config,
+        max(1, args.wallpaper_retries),
+        max(0.0, args.wallpaper_retry_delay),
+    )
+elif args.wallpaper_only:
+    parser.error("--wallpaper-config is required with --wallpaper-only")
