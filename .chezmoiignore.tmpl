@@ -10,6 +10,9 @@
 # Local shell secrets (kept out of chezmoi source; sourced by ~/.bashrc)
 /.config/shell/secrets.local
 
+# Repo-internal agent instructions; do not deploy to $HOME
+/AGENTS.md
+
 {{- $osrel := lower .chezmoi.kernel.osrelease -}}
 {{- if or (contains $osrel "microsoft") (contains $osrel "wsl") }}
 # Hyprland does not apply on WSL
