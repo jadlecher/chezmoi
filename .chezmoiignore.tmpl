@@ -13,6 +13,9 @@
 # Repo-internal agent instructions; do not deploy to $HOME
 /AGENTS.md
 
+# Repo documentation; do not deploy to $HOME
+/README.md
+
 {{- $osrel := lower .chezmoi.kernel.osrelease -}}
 {{- if or (contains $osrel "microsoft") (contains $osrel "wsl") }}
 # Hyprland does not apply on WSL
