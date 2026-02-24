@@ -13,4 +13,5 @@ dark)
   ;;
 esac
 echo setting kitty theme to $theme
-kitty +kitten themes --reload-in=all $theme
+# Write only the generated include file so kitty.conf stays tracked and stable.
+kitty +kitten themes --reload-in=all --config-file-name current-theme.conf "$theme"
