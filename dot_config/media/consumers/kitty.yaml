@@ -1,0 +1,6 @@
+version: 1
+enabled: false
+profile: default
+variants:
+  light: asset.kitty.latte
+  dark: asset.kitty.mocha

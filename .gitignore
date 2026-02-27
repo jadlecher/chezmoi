@@ -3,3 +3,6 @@ __pycache__/
 
 # Local shell secrets file (not tracked)
 dot_config/shell/secrets.local
+
+# Local image catalog override (not tracked)
+dot_config/media/image-catalog.local.yaml

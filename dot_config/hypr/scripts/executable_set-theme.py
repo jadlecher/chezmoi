@@ -7,6 +7,7 @@ import subprocess
 import time
 from os import listdir
 from os.path import isfile, join
+from pathlib import Path
 
 import yaml
 
@@ -124,6 +125,50 @@ def set_wallpaper(output: str, path: str):
     return process.returncode == 0
 
 
+def resolve_wallpaper_path(
+    wallpaper: str,
+    theme: str,
+    resolver: str,
+    catalog: str,
+    local_catalog: str,
+    fetch_policy: str,
+) -> str | None:
+    # Treat values that look like file paths as literal paths for migration compatibility.
+    if "/" in wallpaper or wallpaper.startswith(".") or wallpaper.startswith("~"):
+        path = os.path.abspath(os.path.expanduser(wallpaper))
+        if os.path.isfile(path):
+            return path
+        print(f"warning: wallpaper path not found: {path}")
+        return None
+
+    command = [
+        resolver,
+        "--asset",
+        wallpaper,
+        "--variant",
+        theme,
+        "--fetch",
+        fetch_policy,
+        "--catalog",
+        catalog,
+        "--local-catalog",
+        local_catalog,
+    ]
+    process = subprocess.run(
+        command,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    if process.returncode == 0:
+        return process.stdout.strip()
+    if process.stderr:
+        print(process.stderr.strip())
+    else:
+        print(f"warning: failed to resolve wallpaper asset: {wallpaper}")
+    return None
+
+
 def get_output(outputs: list[dict], desc: str) -> str | None:
     for output in outputs:
         name = output["name"]
@@ -134,7 +179,14 @@ def get_output(outputs: list[dict], desc: str) -> str | None:
     return None
 
 
-def apply_wallpaper_config(theme: str, config: str) -> int:
+def apply_wallpaper_config(
+    theme: str,
+    config: str,
+    resolver: str,
+    catalog: str,
+    local_catalog: str,
+    fetch_policy: str,
+) -> int:
     outputs = get_outputs()
     applied = 0
     desc_pattern = re.compile("^desc:(.+)")
@@ -146,23 +198,50 @@ def apply_wallpaper_config(theme: str, config: str) -> int:
                 desc = matches.group(1)
                 output = get_output(outputs, desc)
             if theme in options and output is not None:
-                wallpaper = options[theme]
-                if set_wallpaper(output, wallpaper):
+                wallpaper = resolve_wallpaper_path(
+                    options[theme],
+                    theme,
+                    resolver,
+                    catalog,
+                    local_catalog,
+                    fetch_policy,
+                )
+                if wallpaper is not None and set_wallpaper(output, wallpaper):
                     applied += 1
     return applied
 
 
-def restore_wallpapers(theme: str, config: str, retries: int, retry_delay: float):
+def restore_wallpapers(
+    theme: str,
+    config: str,
+    retries: int,
+    retry_delay: float,
+    resolver: str,
+    catalog: str,
+    local_catalog: str,
+    fetch_policy: str,
+) -> bool:
     start_wallpaper_daemon()
     for attempt in range(retries):
         try:
-            if apply_wallpaper_config(theme, config) > 0:
-                return
+            if (
+                apply_wallpaper_config(
+                    theme,
+                    config,
+                    resolver,
+                    catalog,
+                    local_catalog,
+                    fetch_policy,
+                )
+                > 0
+            ):
+                return True
         except (subprocess.CalledProcessError, json.JSONDecodeError, KeyError):
             pass
         if attempt + 1 < retries:
             time.sleep(retry_delay)
-    raise RuntimeError("failed to apply wallpapers to any output")
+    print("warning: failed to apply wallpapers to any output")
+    return False
 
 
 parser = argparse.ArgumentParser(prog="set-theme")
@@ -194,7 +273,37 @@ parser.add_argument(
     default=0.2,
     help="Delay in seconds between wallpaper apply attempts",
 )
+parser.add_argument(
+    "--image-resolver",
+    default="~/.config/media/scripts/image-resolve.py",
+    help="Path to image resolver command",
+)
+parser.add_argument(
+    "--image-catalog",
+    default="~/.config/media/image-catalog.yaml",
+    help="Path to shared image catalog",
+)
+parser.add_argument(
+    "--image-local-catalog",
+    default="~/.config/media/image-catalog.local.yaml",
+    help="Path to local image catalog override",
+)
+parser.add_argument(
+    "--image-fetch-policy",
+    choices=["never", "missing"],
+    default="never",
+    help="Whether to fetch missing remote images while resolving assets",
+)
+parser.add_argument(
+    "--require-wallpaper",
+    action="store_true",
+    help="Exit with failure if no wallpapers could be applied",
+)
 args = parser.parse_args()
+
+resolver = str(Path(args.image_resolver).expanduser())
+catalog = str(Path(args.image_catalog).expanduser())
+local_catalog = str(Path(args.image_local_catalog).expanduser())
 
 theme = get_system_theme()
 if not args.wallpaper_only:
@@ -207,11 +316,17 @@ if not args.wallpaper_only:
     sync_dir(input_dir, output_dir, files)
 
 if args.wallpaper_config:
-    restore_wallpapers(
+    applied = restore_wallpapers(
         theme,
         args.wallpaper_config,
         max(1, args.wallpaper_retries),
         max(0.0, args.wallpaper_retry_delay),
+        resolver,
+        catalog,
+        local_catalog,
+        args.image_fetch_policy,
     )
+    if args.require_wallpaper and not applied:
+        raise RuntimeError("no wallpapers were applied")
 elif args.wallpaper_only:
     parser.error("--wallpaper-config is required with --wallpaper-only")

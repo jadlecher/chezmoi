@@ -16,6 +16,9 @@
 # Repo documentation; do not deploy to $HOME
 /README.md
 
+# Local image catalog overrides are machine-specific and untracked
+/.config/media/image-catalog.local.yaml
+
 {{- $osrel := lower .chezmoi.kernel.osrelease -}}
 {{- if or (contains $osrel "microsoft") (contains $osrel "wsl") }}
 # Hyprland does not apply on WSL

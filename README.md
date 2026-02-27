@@ -9,6 +9,7 @@ I use it to track and version the config files I keep on my machine, while editi
 - `dot_config/nvim` - my Neovim config
 - `dot_config/kitty` - my Kitty terminal config
 - `dot_config/hypr` - my Hyprland / Hypridle config
+- `dot_config/media` - shared theme image catalog and helper scripts
 
 ## Chezmoi
 
@@ -20,7 +21,15 @@ I use it to track and version the config files I keep on my machine, while editi
 ```bash
 chezmoi diff
 chezmoi apply --dry-run
+~/.config/media/scripts/sync-images.py
 ```
+
+## Shared theme images
+
+- Shared image definitions live in `~/.config/media/image-catalog.yaml`.
+- Hyprland monitor wallpaper assignments reference shared asset IDs from that catalog.
+- Local/private image overrides can be set in `~/.config/media/image-catalog.local.yaml` (not tracked).
+- No unknown-license binary wallpaper files are committed; remote sources should include checksum and attribution metadata.
 
 ## Notes
 
