@@ -1,0 +1,123 @@
+#!/usr/bin/env bash
+
+set -u
+
+if [[ "${__SET_THEME_SETSID:-0}" != "1" ]]; then
+  exec setsid env __SET_THEME_SETSID=1 "$0" "$@"
+fi
+
+theme="${1:-}"
+case "$theme" in
+  light | dark)
+    value="prefer-$theme"
+    ;;
+  *)
+    echo "Unknown theme '$theme'" >&2
+    exit 1
+    ;;
+esac
+
+runtime_dir="${XDG_RUNTIME_DIR:-/tmp}"
+lock_file="$runtime_dir/set-theme.lock"
+pgid_file="$runtime_dir/set-theme.pgid"
+log_parent="$runtime_dir/set-theme-logs"
+run_id="$(date +%s)-$$"
+log_dir="$log_parent/$run_id"
+
+mkdir -p "$log_dir"
+
+cleanup() {
+  local current=""
+  exec 9>"$lock_file"
+  flock -x 9 || true
+  if [[ -f "$pgid_file" ]]; then
+    current="$(<"$pgid_file")"
+    if [[ "$current" == "$$" ]]; then
+      rm -f "$pgid_file"
+    fi
+  fi
+  flock -u 9 || true
+}
+
+handle_signal() {
+  trap - EXIT
+  cleanup
+  exit 143
+}
+
+trap handle_signal INT TERM
+trap cleanup EXIT
+
+exec 9>"$lock_file"
+flock -x 9
+
+if [[ -f "$pgid_file" ]]; then
+  previous_pgid="$(<"$pgid_file")"
+  if [[ -n "$previous_pgid" ]] && [[ "$previous_pgid" != "$$" ]] && kill -0 "-$previous_pgid" 2>/dev/null; then
+    kill -TERM "-$previous_pgid" 2>/dev/null || true
+    sleep 0.2
+    if kill -0 "-$previous_pgid" 2>/dev/null; then
+      kill -KILL "-$previous_pgid" 2>/dev/null || true
+    fi
+  fi
+fi
+
+printf '%s\n' "$$" >"$pgid_file"
+flock -u 9
+
+echo "setting gsettings preferred color scheme to '$value'"
+gsettings set org.gnome.desktop.interface color-scheme "$value"
+
+declare -a apps=(kitty nvim i3status-rust mako sway qutebrowser waybar hypr)
+declare -A pids
+declare -A logs
+declare -A failures
+
+for app in "${apps[@]}"; do
+  script="$HOME/.config/$app/scripts/set-theme.sh"
+  logs["$app"]="$log_dir/$app.log"
+
+  if [[ ! -f "$script" ]]; then
+    failures["$app"]="missing script: $script"
+    continue
+  fi
+
+  (
+    "$script" "$theme"
+  ) >"${logs[$app]}" 2>&1 &
+  pids["$app"]=$!
+done
+
+for app in "${apps[@]}"; do
+  if [[ -n "${pids[$app]:-}" ]]; then
+    if wait "${pids[$app]}"; then
+      :
+    else
+      rc=$?
+      failures["$app"]="exit code $rc"
+    fi
+  fi
+done
+
+mako_log="$log_dir/makoctl-reload.log"
+if ! makoctl reload >"$mako_log" 2>&1; then
+  rc=$?
+  failures["makoctl-reload"]="exit code $rc"
+  logs["makoctl-reload"]="$mako_log"
+fi
+
+if (( ${#failures[@]} == 0 )); then
+  echo "theme switch complete: all targets succeeded"
+  exit 0
+fi
+
+echo "theme switch completed with failures:" >&2
+for app in "${!failures[@]}"; do
+  echo "  - $app: ${failures[$app]}" >&2
+  if [[ -n "${logs[$app]:-}" ]] && [[ -s "${logs[$app]}" ]]; then
+    echo "    log tail (${logs[$app]}):" >&2
+    tail -n 10 "${logs[$app]}" >&2
+  fi
+done
+
+exit 1
