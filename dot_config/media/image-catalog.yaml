@@ -1,0 +1,17 @@
+version: 1
+cache_dir: ~/.local/share/theme-images
+assets:
+  asset.hypr.eDP-1:
+    variants:
+      light: {}
+      dark: {}
+  asset.hypr.odyssey:
+    variants:
+      light: {}
+      dark: {}
+  asset.kitty.latte:
+    variants:
+      light: {}
+  asset.kitty.mocha:
+    variants:
+      dark: {}

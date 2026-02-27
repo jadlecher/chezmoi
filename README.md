@@ -48,10 +48,14 @@ chezmoi apply --dry-run --refresh-externals
 
 ## Shared theme images
 
-- Shared image definitions live in `~/.config/media/image-catalog.yaml`.
+- Shared asset IDs and variants live in `~/.config/media/image-catalog.yaml`.
+- The tracked catalog intentionally omits concrete image paths and URLs.
 - Hyprland monitor wallpaper assignments reference shared asset IDs from that catalog.
-- Local/private image overrides can be set in `~/.config/media/image-catalog.local.yaml` (not tracked).
-- No unknown-license binary wallpaper files are committed; remote sources should include checksum and attribution metadata.
+- Machine-local/private image mappings belong in `~/.config/media/image-catalog.local.yaml` (not tracked).
+- Start from `~/.config/media/image-catalog.local.example.yaml` and copy it to `~/.config/media/image-catalog.local.yaml`.
+- Validate a mapping with:
+  `~/.config/media/scripts/image-resolve.py --asset asset.hypr.eDP-1 --variant light --fetch never`.
+- Licensed or unredistributable image identifiers must not be committed to tracked catalog files.
 
 ## Notes
 

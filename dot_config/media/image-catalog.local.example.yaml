@@ -1,0 +1,39 @@
+# Local/private image source mappings (not tracked).
+# Copy to ~/.config/media/image-catalog.local.yaml and edit paths for your machine.
+#
+# mkdir -p ~/.config/media
+# cp ~/.config/media/image-catalog.local.example.yaml ~/.config/media/image-catalog.local.yaml
+
+assets:
+  asset.hypr.eDP-1:
+    variants:
+      light:
+        sources:
+          - kind: local
+            path: ~/Pictures/theme-images/hypr-edp1-light.jpg
+      dark:
+        sources:
+          - kind: local
+            path: ~/Pictures/theme-images/hypr-edp1-dark.jpg
+  asset.hypr.odyssey:
+    variants:
+      light:
+        sources:
+          - kind: local
+            path: ~/Pictures/theme-images/hypr-odyssey-light.jpg
+      dark:
+        sources:
+          - kind: local
+            path: ~/Pictures/theme-images/hypr-odyssey-dark.jpg
+  asset.kitty.latte:
+    variants:
+      light:
+        sources:
+          - kind: local
+            path: ~/Pictures/theme-images/kitty-latte-light.jpg
+  asset.kitty.mocha:
+    variants:
+      dark:
+        sources:
+          - kind: local
+            path: ~/Pictures/theme-images/kitty-mocha-dark.jpg

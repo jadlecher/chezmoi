@@ -1,0 +1,6 @@
+eDP-1:
+  light: asset.hypr.eDP-1
+  dark: asset.hypr.eDP-1
+"desc:Samsung Electric Company Odyssey G95NC HNTX600649":
+  light: asset.hypr.odyssey
+  dark: asset.hypr.odyssey
