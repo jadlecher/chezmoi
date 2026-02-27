@@ -9,6 +9,7 @@ I use it to track and version the config files I keep on my machine, while editi
 - `dot_config/nvim` - my Neovim config
 - `dot_config/kitty` - my Kitty terminal config
 - `dot_config/hypr` - my Hyprland / Hypridle config
+- `dot_config/waybar` - my Waybar config
 - `dot_config/media` - shared theme image catalog and helper scripts
 
 ## Chezmoi
@@ -21,8 +22,15 @@ I use it to track and version the config files I keep on my machine, while editi
 ```bash
 chezmoi diff
 chezmoi apply --dry-run
+chezmoi apply --dry-run --refresh-externals
 ~/.config/media/scripts/sync-images.py
 ```
+
+## Waybar Catppuccin themes
+
+- Waybar Catppuccin theme files are fetched via `.chezmoiexternal.toml`, not vendored in this repo.
+- Only `latte.css` and `mocha.css` are managed externally.
+- To update, bump the pinned Catppuccin commit in `.chezmoiexternal.toml` and update checksums.
 
 ## Shared theme images
 

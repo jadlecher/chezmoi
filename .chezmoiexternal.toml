@@ -1,0 +1,9 @@
+[".config/waybar/themes/latte.css"]
+    type = "file"
+    url = "https://raw.githubusercontent.com/catppuccin/waybar/ee8ed32b4f63e9c417249c109818dcc05a2e25da/themes/latte.css"
+    checksum.sha256 = "0f0bbdb8a953390219f5db8ee81ddf8514f823bafa6834f38e71d72ec0f99180"
+
+[".config/waybar/themes/mocha.css"]
+    type = "file"
+    url = "https://raw.githubusercontent.com/catppuccin/waybar/ee8ed32b4f63e9c417249c109818dcc05a2e25da/themes/mocha.css"
+    checksum.sha256 = "a6e30597ccc828e898844eb0cea9df7d73879ff5672a6a550f3acc24c93edd17"

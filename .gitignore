@@ -6,3 +6,7 @@ dot_config/shell/secrets.local
 
 # Local image catalog override (not tracked)
 dot_config/media/image-catalog.local.yaml
+
+# Waybar Catppuccin themes are externally managed by chezmoi
+dot_config/waybar/themes/latte.css
+dot_config/waybar/themes/mocha.css
