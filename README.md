@@ -28,9 +28,16 @@ chezmoi apply --dry-run --refresh-externals
 
 ## Waybar Catppuccin themes
 
-- Waybar Catppuccin theme files are fetched via `.chezmoiexternal.toml`, not vendored in this repo.
+- Waybar Catppuccin theme files are fetched via `.chezmoiexternal.toml.tmpl`, not vendored in this repo.
 - Only `latte.css` and `mocha.css` are managed externally.
-- To update, bump the pinned Catppuccin commit in `.chezmoiexternal.toml` and update checksums.
+- To update, bump the pinned Catppuccin commit in `.chezmoiexternal.toml.tmpl` and update checksums.
+
+## WSL behavior
+
+- WSL is auto-detected from the Linux kernel release string (looking for `microsoft` or `wsl`).
+- On WSL, ChezMoi excludes `~/.config/hypr/**` and `~/.config/waybar/**`.
+- On WSL, Waybar Catppuccin externals are not fetched.
+- `~/.local/bin/set-theme` skips Hyprland and Waybar targets on WSL, while keeping the rest of the theme updates.
 
 ## Shared theme images
 

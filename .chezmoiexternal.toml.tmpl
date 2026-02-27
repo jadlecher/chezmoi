@@ -1,3 +1,5 @@
+{{- $osrel := lower .chezmoi.kernel.osrelease -}}
+{{- if not (or (contains $osrel "microsoft") (contains $osrel "wsl")) }}
 [".config/waybar/themes/latte.css"]
     type = "file"
     url = "https://raw.githubusercontent.com/catppuccin/waybar/ee8ed32b4f63e9c417249c109818dcc05a2e25da/themes/latte.css"
@@ -7,3 +9,4 @@
     type = "file"
     url = "https://raw.githubusercontent.com/catppuccin/waybar/ee8ed32b4f63e9c417249c109818dcc05a2e25da/themes/mocha.css"
     checksum.sha256 = "a6e30597ccc828e898844eb0cea9df7d73879ff5672a6a550f3acc24c93edd17"
+{{- end }}

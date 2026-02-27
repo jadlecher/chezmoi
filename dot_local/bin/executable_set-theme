@@ -69,7 +69,17 @@ flock -u 9
 echo "setting gsettings preferred color scheme to '$value'"
 gsettings set org.gnome.desktop.interface color-scheme "$value"
 
-declare -a apps=(kitty nvim i3status-rust mako sway qutebrowser waybar hypr)
+is_wsl=0
+kernel_release="$(uname -r 2>/dev/null || true)"
+if [[ "${kernel_release,,}" == *microsoft* ]] || [[ "${kernel_release,,}" == *wsl* ]]; then
+  is_wsl=1
+fi
+
+declare -a apps=(kitty nvim i3status-rust mako sway qutebrowser)
+if (( is_wsl == 0 )); then
+  apps+=(waybar hypr)
+fi
+
 declare -A pids
 declare -A logs
 declare -A failures

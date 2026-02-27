@@ -21,6 +21,7 @@
 
 {{- $osrel := lower .chezmoi.kernel.osrelease -}}
 {{- if or (contains $osrel "microsoft") (contains $osrel "wsl") }}
-# Hyprland does not apply on WSL
+# Hyprland and Waybar do not apply on WSL
 /.config/hypr/**
+/.config/waybar/**
 {{- end }}
