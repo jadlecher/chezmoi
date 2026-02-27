@@ -16,19 +16,19 @@ themes = ["light", "dark"]
 
 
 def get_system_theme():
-    command = "gsettings get org.gnome.desktop.interface color-scheme"
-    result = subprocess.run(command.split(" "), stdout=subprocess.PIPE, check=True)
-    theme = result.stdout.decode("utf-8")
-    theme = theme.strip()  # remove any whitespace surrounding output
-    theme = theme.strip("'")  # remove quotes around output
-    prefix = "prefer-"
-    if not theme.startswith(prefix):
-        raise ValueError("invalid system theme detected")
-    theme = theme.removeprefix("prefer-")
-    if theme in themes:
-        return theme
-    else:
-        raise ValueError("invalid system theme detected")
+    command = ["gsettings", "get", "org.gnome.desktop.interface", "color-scheme"]
+    try:
+        result = subprocess.run(command, stdout=subprocess.PIPE, check=True, text=True)
+        value = result.stdout.strip().strip("'")
+        prefix = "prefer-"
+        if value.startswith(prefix):
+            theme = value.removeprefix(prefix)
+            if theme in themes:
+                return theme
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        pass
+    # Keep theming functional on minimal/non-GNOME sessions.
+    return "dark"
 
 
 def list_config_files(path: str):
@@ -62,6 +62,7 @@ def sync_link(src: str, dest: str):
 
 
 def sync_dir(input_dir: str, output_dir: str, files: list[str]):
+    os.makedirs(output_dir, exist_ok=True)
     for file in files:
         src = os.path.join(input_dir, file)
         dest = os.path.join(output_dir, file)
@@ -75,8 +76,14 @@ def sync_dir(input_dir: str, output_dir: str, files: list[str]):
 
 
 def get_outputs() -> list[dict]:
-    process = subprocess.check_output(["wlr-randr", "--json"], text=True)
-    return json.loads(process)
+    commands = (["hyprctl", "monitors", "-j"], ["wlr-randr", "--json"])
+    for command in commands:
+        try:
+            process = subprocess.check_output(command, text=True)
+            return json.loads(process)
+        except (subprocess.CalledProcessError, FileNotFoundError, json.JSONDecodeError):
+            continue
+    raise RuntimeError("unable to query outputs with hyprctl or wlr-randr")
 
 
 def start_wallpaper_daemon():
@@ -172,7 +179,10 @@ def resolve_wallpaper_path(
 def get_output(outputs: list[dict], desc: str) -> str | None:
     for output in outputs:
         name = output["name"]
-        matches = re.compile(f"(.+) \\({name}\\)$").search(output["description"])
+        description = output.get("description", "")
+        if description == desc:
+            return name
+        matches = re.compile(f"(.+) \\({name}\\)$").search(description)
         if matches is not None:
             if desc == matches.group(1):
                 return name
