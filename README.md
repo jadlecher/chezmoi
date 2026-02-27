@@ -44,6 +44,7 @@ chezmoi apply --dry-run --refresh-externals
 - On WSL, ChezMoi excludes `~/.config/hypr/**` and `~/.config/waybar/**`.
 - On WSL, Waybar Catppuccin externals are not fetched.
 - `~/.local/bin/set-theme` skips Hyprland and Waybar targets on WSL, while keeping the rest of the theme updates.
+- On WSL, kitty uses an opaque background and resolves its `background_image` from `~/.config/media/consumers/kitty.yaml` via shared media assets.
 
 ## Shared theme images
 
