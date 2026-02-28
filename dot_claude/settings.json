@@ -1,0 +1,21 @@
+{
+  "env": {
+    "BASH_DEFAULT_TIMEOUT_MS": "300000",
+    "BASH_MAX_TIMEOUT_MS": "1800000"
+  },
+  "includeCoAuthoredBy": false,
+  "model": "sonnet",
+  "hooks": {
+    "Notification": [
+      {
+        "matcher": "permission_prompt",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh -c 'notify-send -u critical \"Claude: Permission Required\" \"Claude is waiting for your permission response.\" >/dev/null 2>&1 || printf \"\\\\a\"'"
+          }
+        ]
+      }
+    ]
+  }
+}
