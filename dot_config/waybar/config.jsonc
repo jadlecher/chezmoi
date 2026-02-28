@@ -1,5 +1,7 @@
 // -*- mode: jsonc -*-
 {
+  "on-sigusr2": "reload",
+  "reload_style_on_change": true,
   "spacing": 4,
   "modules-left": [
     "hyprland/workspaces",
