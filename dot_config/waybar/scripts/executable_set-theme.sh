@@ -1,9 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Prefer in-process reload to avoid tearing down the bar surface/exclusive zone.
-if pgrep -x waybar >/dev/null 2>&1; then
-  pkill -x -SIGUSR2 waybar
-else
+# Avoid forced reloads to minimize visible flicker during theme changes.
+# Waybar can switch between style-light.css / style-dark.css based on system theme.
+if ! pgrep -x waybar >/dev/null 2>&1; then
   waybar >/dev/null 2>&1 &
 fi
