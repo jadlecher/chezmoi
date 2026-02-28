@@ -126,9 +126,13 @@ def set_wallpaper(output: str, path: str):
             output,
             path,
         ],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
     )
+    if process.returncode != 0:
+        error = (process.stderr or process.stdout or "unknown error").strip()
+        print(f"warning: failed to set wallpaper on {output}: {error}")
     return process.returncode == 0
 
 
@@ -246,7 +250,7 @@ def restore_wallpapers(
                 > 0
             ):
                 return True
-        except (subprocess.CalledProcessError, json.JSONDecodeError, KeyError):
+        except (RuntimeError, subprocess.CalledProcessError, json.JSONDecodeError, KeyError):
             pass
         if attempt + 1 < retries:
             time.sleep(retry_delay)
