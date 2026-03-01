@@ -110,11 +110,18 @@ for app in "${apps[@]}"; do
   fi
 done
 
-mako_log="$log_dir/makoctl-reload.log"
-if ! makoctl reload >"$mako_log" 2>&1; then
-  rc=$?
-  failures["makoctl-reload"]="exit code $rc"
-  logs["makoctl-reload"]="$mako_log"
+if command -v makoctl >/dev/null 2>&1; then
+  bus_socket="${XDG_RUNTIME_DIR:-/run/user/$UID}/bus"
+  if [[ -n "${DBUS_SESSION_BUS_ADDRESS:-}" ]] || [[ -S "$bus_socket" ]]; then
+    mako_log="$log_dir/makoctl-reload.log"
+    if ! makoctl reload >"$mako_log" 2>&1; then
+      rc=$?
+      failures["makoctl-reload"]="exit code $rc"
+      logs["makoctl-reload"]="$mako_log"
+    fi
+  else
+    echo "skipping mako reload: no user session bus detected"
+  fi
 fi
 
 if (( ${#failures[@]} == 0 )); then
