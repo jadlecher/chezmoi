@@ -11,8 +11,10 @@ from pathlib import Path
 
 import yaml
 
-extension = ".conf"
-themes = ["light", "dark"]
+EXTENSION = ".conf"
+VALID_THEMES = ("light", "dark")
+DEFAULT_THEME = "dark"
+THEME_SUFFIX_PATTERN = re.compile(r"-(light|dark)\.conf$", re.IGNORECASE)
 
 
 def get_system_theme():
@@ -23,29 +25,44 @@ def get_system_theme():
         prefix = "prefer-"
         if value.startswith(prefix):
             theme = value.removeprefix(prefix)
-            if theme in themes:
+            if theme in VALID_THEMES:
                 return theme
     except (subprocess.CalledProcessError, FileNotFoundError):
         pass
     # Keep theming functional on minimal/non-GNOME sessions.
-    return "dark"
+    return DEFAULT_THEME
 
 
 def list_config_files(path: str):
     return [
         file
         for file in listdir(path)
-        if file.endswith(extension) and isfile(join(path, file))
+        if file.endswith(EXTENSION) and isfile(join(path, file))
     ]
 
 
-def get_opposite_theme(theme: str):
-    return [x for x in themes if x != theme][0]
+def classify_theme_variant(filename: str) -> str | None:
+    """Return the theme variant suffix for a config file, if present."""
+    match = THEME_SUFFIX_PATTERN.search(filename)
+    if match is None:
+        return None
+    return match.group(1).lower()
 
 
-def filter_inapplicable_config_files(theme: str, files: list[str]):
-    pattern = f"^.*-{get_opposite_theme(theme)}\\.conf$"
-    return [file for file in files if not re.search(pattern, file, re.IGNORECASE)]
+def select_config_files_for_theme(theme: str, files: list[str]):
+    """Keep shared configs and only theme-variant files matching the active theme."""
+    selected = []
+    for file in files:
+        variant = classify_theme_variant(file)
+        if variant is None or variant == theme:
+            selected.append(file)
+    return selected
+
+
+def resolve_theme(theme_override: str | None) -> str:
+    if theme_override:
+        return theme_override
+    return get_system_theme()
 
 
 def sync_link(src: str, dest: str):
@@ -71,7 +88,7 @@ def sync_dir(input_dir: str, output_dir: str, files: list[str]):
     # remove stale links
     for file in listdir(output_dir):
         path = os.path.join(output_dir, file)
-        if os.path.islink(path) and file.endswith(extension) and file not in files:
+        if os.path.islink(path) and file.endswith(EXTENSION) and file not in files:
             os.remove(path)
 
 
@@ -276,6 +293,11 @@ parser.add_argument(
     help="Only apply wallpapers and skip config symlink updates",
 )
 parser.add_argument(
+    "--theme",
+    choices=VALID_THEMES,
+    help="Explicitly set theme instead of auto-detecting from gsettings",
+)
+parser.add_argument(
     "--wallpaper-retries",
     type=int,
     default=1,
@@ -319,12 +341,12 @@ resolver = str(Path(args.image_resolver).expanduser())
 catalog = str(Path(args.image_catalog).expanduser())
 local_catalog = str(Path(args.image_local_catalog).expanduser())
 
-theme = get_system_theme()
+theme = resolve_theme(args.theme)
 if not args.wallpaper_only:
     if not args.input_dir or not args.output_dir:
         parser.error("--input-dir and --output-dir are required unless --wallpaper-only is set")
     files = list_config_files(args.input_dir)
-    files = filter_inapplicable_config_files(theme, files)
+    files = select_config_files_for_theme(theme, files)
     input_dir = os.path.abspath(args.input_dir)
     output_dir = os.path.abspath(args.output_dir)
     sync_dir(input_dir, output_dir, files)
