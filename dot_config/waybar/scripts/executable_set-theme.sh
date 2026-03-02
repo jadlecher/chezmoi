@@ -17,19 +17,54 @@ case "$theme" in
 esac
 
 config_dir="$HOME/.config/waybar"
-theme_style="$config_dir/style-$theme.css"
-cache_dir="${XDG_CACHE_HOME:-$HOME/.cache}/waybar"
-current_style="$cache_dir/style-current.css"
+base_style="$config_dir/style.css"
+theme_dir="$config_dir/themes"
+case "$theme" in
+  dark) palette_name="mocha.css" ;;
+  light) palette_name="latte.css" ;;
+esac
+palette_style="$theme_dir/$palette_name"
+current_palette="$theme_dir/current.css"
+current_style="$config_dir/style-current.css"
+legacy_cache_dir="${XDG_CACHE_HOME:-$HOME/.cache}/waybar"
+legacy_style="$legacy_cache_dir/style-current.css"
 
-if [[ ! -f "$theme_style" ]]; then
-  echo "missing style file: $theme_style" >&2
+if [[ ! -f "$palette_style" ]]; then
+  echo "missing palette style file: $palette_style" >&2
   exit 1
 fi
 
-mkdir -p "$cache_dir"
+if [[ ! -f "$base_style" ]]; then
+  echo "missing base style file: $base_style" >&2
+  exit 1
+fi
 
-if [[ ! -f "$current_style" ]] || ! cmp -s "$theme_style" "$current_style"; then
-  cp "$theme_style" "$current_style"
+mkdir -p "$theme_dir"
+ln -sfn "$palette_name" "$current_palette"
+
+new_style="$(mktemp "$config_dir/style-current.css.tmp.XXXXXX")"
+cat >"$new_style" <<EOF
+@import "./themes/current.css";
+@import "./style.css";
+EOF
+if [[ ! -f "$current_style" ]] || ! cmp -s "$new_style" "$current_style"; then
+  mv "$new_style" "$current_style"
+else
+  rm -f "$new_style"
+fi
+
+# Backward compatibility for existing waybar processes launched with
+# ~/.cache/waybar/style-current.css in older setups.
+mkdir -p "$legacy_cache_dir"
+legacy_new_style="$(mktemp "$legacy_cache_dir/style-current.css.tmp.XXXXXX")"
+cat >"$legacy_new_style" <<EOF
+@import "$current_palette";
+@import "$base_style";
+EOF
+if [[ ! -f "$legacy_style" ]] || ! cmp -s "$legacy_new_style" "$legacy_style"; then
+  mv "$legacy_new_style" "$legacy_style"
+else
+  rm -f "$legacy_new_style"
 fi
 
 start_waybar() {
