@@ -28,6 +28,7 @@ current_palette="$theme_dir/current.css"
 current_style="$config_dir/style-current.css"
 legacy_cache_dir="${XDG_CACHE_HOME:-$HOME/.cache}/waybar"
 legacy_style="$legacy_cache_dir/style-current.css"
+session_script="$config_dir/scripts/session.sh"
 
 if [[ ! -f "$palette_style" ]]; then
   echo "missing palette style file: $palette_style" >&2
@@ -67,15 +68,9 @@ else
   rm -f "$legacy_new_style"
 fi
 
-start_waybar() {
-  waybar -s "$current_style" >/dev/null 2>&1 &
-}
-
-mapfile -t pids < <(pgrep -x waybar || true)
-if (( ${#pids[@]} == 0 )); then
-  start_waybar
-else
-  for pid in "${pids[@]}"; do
-    kill -SIGUSR2 "$pid" 2>/dev/null || true
-  done
+if [[ ! -x "$session_script" ]]; then
+  echo "missing session script: $session_script" >&2
+  exit 1
 fi
+
+"$session_script" reconcile
