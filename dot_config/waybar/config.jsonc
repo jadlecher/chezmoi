@@ -64,7 +64,8 @@
       "",
       ""
     ],
-    "scroll-step": 5.0,
+    "on-scroll-up": "~/.local/bin/backlight-step up 5",
+    "on-scroll-down": "~/.local/bin/backlight-step down 5",
     "tooltip": false
   },
   "battery": {

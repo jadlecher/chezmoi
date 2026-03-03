@@ -1,0 +1,114 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+name=backlight-step
+
+usage() {
+  cat <<'USAGE'
+Usage: backlight-step <up|down> [step]
+USAGE
+}
+
+direction="${1:-}"
+step="${2:-5}"
+
+case "$direction" in
+  up|down)
+    ;;
+  -h|--help)
+    usage
+    exit 0
+    ;;
+  *)
+    usage >&2
+    exit 1
+    ;;
+esac
+
+if ! [[ "$step" =~ ^[0-9]+$ ]]; then
+  echo "$name: step must be a non-negative integer" >&2
+  exit 1
+fi
+
+shopt -s nullglob
+devices=(/sys/class/backlight/*)
+shopt -u nullglob
+
+if ((${#devices[@]} == 0)); then
+  echo "$name: no backlight devices found under /sys/class/backlight" >&2
+  exit 2
+fi
+
+first_writable_max=""
+first_writable_brightness=""
+writable_devices=0
+
+for device in "${devices[@]}"; do
+  max_file="$device/max_brightness"
+  brightness_file="$device/brightness"
+
+  if [[ ! -r "$max_file" || ! -e "$brightness_file" ]]; then
+    continue
+  fi
+
+  if [[ ! -w "$brightness_file" ]]; then
+    perms="$(stat -c '%a %U:%G' "$brightness_file" 2>/dev/null || echo 'unknown')"
+    echo "$name: $brightness_file is not writable ($perms)" >&2
+    continue
+  fi
+
+  writable_devices=$((writable_devices + 1))
+  if [[ -z "$first_writable_max" ]]; then
+    first_writable_max="$max_file"
+    first_writable_brightness="$brightness_file"
+  fi
+done
+
+if ((writable_devices == 0)); then
+  echo "$name: found backlight devices but none are writable; check udev backlight permissions and group membership (e.g. video)" >&2
+  exit 3
+fi
+
+if ! read -r maximum <"$first_writable_max"; then
+  echo "$name: failed to read $first_writable_max" >&2
+  exit 4
+fi
+
+if ! [[ "$maximum" =~ ^[0-9]+$ ]] || ((maximum <= 0)); then
+  echo "$name: invalid max brightness '$maximum' in $first_writable_max" >&2
+  exit 4
+fi
+
+if ! read -r current_raw <"$first_writable_brightness"; then
+  echo "$name: failed to read $first_writable_brightness" >&2
+  exit 4
+fi
+
+if ! [[ "$current_raw" =~ ^[0-9]+$ ]]; then
+  echo "$name: invalid brightness '$current_raw' in $first_writable_brightness" >&2
+  exit 4
+fi
+
+current=$((current_raw * 100 / maximum))
+
+if [[ "$direction" == "up" ]]; then
+  target=$((current + step))
+else
+  target=$((current - step))
+fi
+
+if ((target > 100)); then
+  target=100
+elif ((target < 0)); then
+  target=0
+fi
+
+script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+backlight_cmd="$script_dir/backlight"
+
+if [[ ! -x "$backlight_cmd" ]]; then
+  echo "$name: missing executable backlight command at $backlight_cmd" >&2
+  exit 5
+fi
+
+"$backlight_cmd" "$target"
