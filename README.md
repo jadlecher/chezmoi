@@ -26,6 +26,17 @@ chezmoi apply --dry-run --refresh-externals
 ~/.config/media/scripts/sync-images.py
 ```
 
+## Backlight permissions
+
+- `dot_etc/...` in this repo maps to `~/.etc/...`, not system `/etc/...`.
+- To grant non-root backlight writes, install a root-managed udev rule at `/etc/udev/rules.d/backlight.rules`:
+  ```udev
+  ACTION=="add", SUBSYSTEM=="backlight", TEST=="/sys/class/backlight/%k/brightness", RUN+="/bin/chgrp video /sys/class/backlight/%k/brightness"
+  ACTION=="add", SUBSYSTEM=="backlight", TEST=="/sys/class/backlight/%k/brightness", RUN+="/bin/chmod g+w /sys/class/backlight/%k/brightness"
+  ```
+- The `%k` token keeps this device-name agnostic (for example, `intel_backlight` or `nvidia_0`).
+- Portability note: Linux-generic approach, but group conventions can vary by distro.
+
 ## Waybar Catppuccin themes
 
 - Waybar Catppuccin theme files are fetched via `.chezmoiexternal.toml.tmpl`, not vendored in this repo.

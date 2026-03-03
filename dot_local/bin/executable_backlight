@@ -1,0 +1,65 @@
+#!/bin/bash
+name=backlight
+if [ "$#" -ne 1 ]; then
+  echo "$name requires 1 argument" >&2
+  exit 1
+fi
+percentage="$1"
+if ! [[ $percentage =~ ^[0-9]+$ ]]; then
+  echo "$name argument must be a number between 0 and 100" >&2
+  exit 1
+fi
+if ((percentage > 100 || percentage < 0)); then
+  echo "$name argument must be a number between 0 and 100" >&2
+  exit 1
+fi
+
+shopt -s nullglob
+devices=(/sys/class/backlight/*)
+shopt -u nullglob
+
+if ((${#devices[@]} == 0)); then
+  echo "$name: no backlight devices found under /sys/class/backlight" >&2
+  exit 2
+fi
+
+writable_devices=0
+write_failures=0
+
+for device in "${devices[@]}"; do
+  max_file="$device/max_brightness"
+  brightness_file="$device/brightness"
+
+  if [[ ! -r $max_file || ! -e $brightness_file ]]; then
+    continue
+  fi
+
+  if [[ ! -w $brightness_file ]]; then
+    perms="$(stat -c '%a %U:%G' "$brightness_file" 2>/dev/null || echo 'unknown')"
+    echo "$name: $brightness_file is not writable ($perms)" >&2
+    continue
+  fi
+
+  writable_devices=$((writable_devices + 1))
+
+  if ! read -r maximum <"$max_file"; then
+    echo "$name: failed to read $max_file" >&2
+    write_failures=$((write_failures + 1))
+    continue
+  fi
+
+  value=$((percentage * maximum / 100))
+  if ! echo "$value" >"$brightness_file"; then
+    echo "$name: failed to write $brightness_file" >&2
+    write_failures=$((write_failures + 1))
+  fi
+done
+
+if ((writable_devices == 0)); then
+  echo "$name: found backlight devices but none are writable; check udev backlight permissions and group membership (e.g. video)" >&2
+  exit 3
+fi
+
+if ((write_failures > 0)); then
+  exit 4
+fi
