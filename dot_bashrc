@@ -31,5 +31,8 @@ fi
 # Add user bin to PATH
 export PATH=~/.local/bin:$PATH
 
+# Add Rust cargo binaries to PATH
+export PATH=~/.cargo/bin:$PATH
+
 # Add user npm binaries to PATH
 export PATH=~/.npm-global/bin:$PATH
