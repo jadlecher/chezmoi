@@ -45,7 +45,7 @@ EOF
 }
 
 start_waybar() {
-  waybar -s "$style_file" >/dev/null 2>&1 &
+  waybar -s "$style_file" 9>&- >/dev/null 2>&1 &
 }
 
 collect_waybar_pids() {

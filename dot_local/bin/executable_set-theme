@@ -67,7 +67,8 @@ printf '%s\n' "$$" >"$pgid_file"
 flock -u 9
 
 echo "setting gsettings preferred color scheme to '$value'"
-gsettings set org.gnome.desktop.interface color-scheme "$value"
+timeout 5 gsettings set org.gnome.desktop.interface color-scheme "$value" \
+  || echo "warning: gsettings set timed out or failed (dconf may be unavailable)" >&2
 
 is_wsl=0
 kernel_release="$(uname -r 2>/dev/null || true)"
