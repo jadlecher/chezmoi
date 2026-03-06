@@ -26,6 +26,13 @@ chezmoi apply --dry-run --refresh-externals
 ~/.config/media/scripts/sync-images.py
 ```
 
+## Codex notifications
+
+- Codex TUI notifications for permission prompts are managed via `.chezmoiscripts/run_onchange_codex-notifications.sh`.
+- The script updates only `[tui]` notification keys in `~/.codex/config.toml` and preserves host-local settings such as project trust entries.
+- `notifications = ["approval-requested"]` and `notifications_min_timeout_ms = 0` are enforced.
+- This is Linux-generic and not Gentoo-specific; visible desktop popup behavior depends on terminal support for notifications.
+
 ## Backlight permissions
 
 - `dot_etc/...` in this repo maps to `~/.etc/...`, not system `/etc/...`.
