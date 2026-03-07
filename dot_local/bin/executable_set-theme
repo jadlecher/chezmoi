@@ -76,7 +76,7 @@ if [[ "${kernel_release,,}" == *microsoft* ]] || [[ "${kernel_release,,}" == *ws
   is_wsl=1
 fi
 
-declare -a apps=(kitty nvim i3status-rust mako sway qutebrowser)
+declare -a apps=(kitty nvim i3status-rust mako sway qutebrowser codex)
 if (( is_wsl == 0 )); then
   apps+=(waybar hypr)
 fi
@@ -88,6 +88,11 @@ declare -A failures
 for app in "${apps[@]}"; do
   script="$HOME/.config/$app/scripts/set-theme.sh"
   logs["$app"]="$log_dir/$app.log"
+
+  if [[ "$app" == "codex" ]] && ! command -v codex >/dev/null 2>&1; then
+    echo "warning: codex not installed; skipping codex theme update" >&2
+    continue
+  fi
 
   if [[ ! -f "$script" ]]; then
     failures["$app"]="missing script: $script"
