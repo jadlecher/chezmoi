@@ -84,6 +84,7 @@ fi
 declare -A pids
 declare -A logs
 declare -A failures
+failure_count=0
 
 for app in "${apps[@]}"; do
   script="$HOME/.config/$app/scripts/set-theme.sh"
@@ -96,6 +97,7 @@ for app in "${apps[@]}"; do
 
   if [[ ! -f "$script" ]]; then
     failures["$app"]="missing script: $script"
+    ((failure_count += 1))
     continue
   fi
 
@@ -112,6 +114,7 @@ for app in "${apps[@]}"; do
     else
       rc=$?
       failures["$app"]="exit code $rc"
+      ((failure_count += 1))
     fi
   fi
 done
@@ -124,13 +127,14 @@ if command -v makoctl >/dev/null 2>&1; then
       rc=$?
       failures["makoctl-reload"]="exit code $rc"
       logs["makoctl-reload"]="$mako_log"
+      ((failure_count += 1))
     fi
   else
     echo "skipping mako reload: no user session bus detected"
   fi
 fi
 
-if (( ${#failures[@]} == 0 )); then
+if (( failure_count == 0 )); then
   echo "theme switch complete: all targets succeeded"
   exit 0
 fi
