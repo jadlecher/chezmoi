@@ -17,5 +17,9 @@
         ]
       }
     ]
+  },
+  "statusLine": {
+    "type": "command",
+    "command": "bash /home/james/.claude/statusline-command.sh"
   }
 }
