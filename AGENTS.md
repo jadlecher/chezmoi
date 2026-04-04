@@ -28,6 +28,13 @@ This repository is a personal Linux configuration project managed with [ChezMoi]
 - Note portability caveats (especially Gentoo-specific assumptions).
 - List validation performed and any skipped checks.
 
+## Question Policy
+
+- When asking the user questions, always use the `question` tool.
+- All questions must be posed as multiple-choice questions with a clear recommendation.
+- The recommended option should be listed first with "(Recommended)" appended to its label.
+- Free-form/open-ended questions should only be used as a last-ditch fallback when the question explicitly cannot be rendered in a multiple-choice format.
+
 ## Worktree Validation
 
 - This repo uses `go-task` as a frontend for `chezmoi` to simplify validation in `git worktree`.
