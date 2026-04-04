@@ -20,6 +20,10 @@
 # Local image catalog overrides are machine-specific and untracked
 /.config/media/image-catalog.local.yaml
 
+# Codex: ignore everything by default; manage only explicit allowlist entries
+/.codex/**
+!/.codex/config.toml
+
 {{- $osrel := lower .chezmoi.kernel.osrelease -}}
 {{- if or (contains $osrel "microsoft") (contains $osrel "wsl") }}
 # Hyprland and Waybar do not apply on WSL

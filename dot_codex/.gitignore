@@ -1,31 +1,4 @@
-# Keep this directory in the repo, but do not commit local Codex runtime state.
+# Ignore everything in this source dir by default; allowlist managed files only.
 *
 !.gitignore
 !private_config.toml.tmpl
-
-# Credentials and auth material
-auth.json
-
-# Temporary/runtime data
-.tmp/
-tmp/
-cache/
-log/
-sessions/
-shell_snapshots/
-memories/
-*.sqlite
-*.sqlite-shm
-*.sqlite-wal
-*.jsonl
-*.log
-
-# Downloaded dependencies and bundled tool assets
-skills/
-
-# Host-specific configuration and approvals
-rules/
-models_cache.json
-history.jsonl
-version.json
-.personality_migration
