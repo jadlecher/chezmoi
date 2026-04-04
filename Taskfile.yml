@@ -1,0 +1,71 @@
+version: '3'
+
+vars:
+  # Detect if we're in a git worktree by checking .git file content
+  IS_WORKTREE:
+    sh: |
+      if [[ -f ".git" ]] && grep -q "worktrees" .git 2>/dev/null; then
+        echo "true"
+      else
+        echo "false"
+      fi
+  
+  # Set source flag only when in worktree
+  SOURCE_FLAG:
+    sh: |
+      if [[ -f ".git" ]] && grep -q "worktrees" .git 2>/dev/null; then
+        echo "--source $(pwd)"
+      else
+        echo ""
+      fi
+
+tasks:
+  default:
+    desc: List all available validation tasks
+    cmds:
+      - task --list
+
+  diff:
+    desc: Show diff between worktree and $HOME (chezmoi diff)
+    cmds:
+      - chezmoi diff {{.SOURCE_FLAG}} {{.CLI_ARGS}}
+
+  apply-dry:
+    desc: Preview what would be applied without making changes
+    cmds:
+      - chezmoi apply --dry-run {{.SOURCE_FLAG}} {{.CLI_ARGS}}
+
+  verify:
+    desc: Verify destination matches target state (exits non-zero on mismatch)
+    cmds:
+      - chezmoi verify {{.SOURCE_FLAG}} {{.CLI_ARGS}}
+
+  status:
+    desc: Show status of managed targets
+    cmds:
+      - chezmoi status {{.SOURCE_FLAG}} {{.CLI_ARGS}}
+
+  validate:
+    desc: Run full validation (diff + verify) for CI/pre-commit checks
+    cmds:
+      - task: diff
+      - task: verify
+    silent: true
+
+  managed:
+    desc: List all files managed by chezmoi from this source
+    cmds:
+      - chezmoi managed {{.SOURCE_FLAG}}
+
+  unmanaged:
+    desc: List unmanaged files in $HOME
+    cmds:
+      - chezmoi unmanaged
+
+  info:
+    desc: Show worktree detection status and effective source directory
+    cmds:
+      - |
+        echo "Worktree detected: {{.IS_WORKTREE}}"
+        echo "Source flag: {{.SOURCE_FLAG}}"
+        echo "Current directory: $(pwd)"

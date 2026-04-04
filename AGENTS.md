@@ -27,3 +27,10 @@ This repository is a personal Linux configuration project managed with [ChezMoi]
 - Summarize what changed and why.
 - Note portability caveats (especially Gentoo-specific assumptions).
 - List validation performed and any skipped checks.
+
+## Worktree Validation
+
+- This repo uses `go-task` as a frontend for `chezmoi` to simplify validation in `git worktree`.
+- Instead of running `chezmoi diff`, use `task diff`. This automatically uses the current worktree as the source.
+- For a comprehensive check, run `task validate`, which performs both a `diff` and a `verify`.
+- All `task` commands pass extra arguments to `chezmoi`. For example: `task diff -- --refresh-externals`.
