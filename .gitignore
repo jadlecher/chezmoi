@@ -13,3 +13,6 @@ dot_config/waybar/themes/mocha.css
 
 # Local Codex CLI repo marker (not tracked)
 .codex
+
+# Neovim local log file (not tracked)
+.nvimlog
