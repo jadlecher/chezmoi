@@ -248,40 +248,26 @@ end
 local function build_display_label(cwd, command)
 	local dir_name = basename(cwd)
 	local branch = run_git({ "rev-parse", "--abbrev-ref", "HEAD" }, cwd)
-	local prefix = command and (command .. "@") or ""
-	if not branch or branch == "" or branch == "HEAD" or branch == "main" then
-		return prefix ~= "" and ("terminal:" .. prefix .. dir_name) or dir_name
+
+	local parts = { "term:/" }
+	if command then
+		parts[#parts + 1] = command .. "@"
+	end
+	parts[#parts + 1] = dir_name
+	if branch and branch ~= "" and branch ~= "HEAD" and branch ~= "main" then
+		local common_git_dir = run_git({ "rev-parse", "--path-format=absolute", "--git-common-dir" }, cwd)
+		local repo_name = common_git_dir and basename(vim.fs.dirname(common_git_dir))
+		if not repo_name or dir_name ~= (repo_name .. "." .. sanitize_branch(branch)) then
+			parts[#parts + 1] = ":" .. branch
+		end
 	end
 
-	local common_git_dir = run_git({ "rev-parse", "--path-format=absolute", "--git-common-dir" }, cwd)
-	local repo_name = common_git_dir and basename(vim.fs.dirname(common_git_dir))
-	if repo_name and dir_name == (repo_name .. "." .. sanitize_branch(branch)) then
-		return prefix ~= "" and ("terminal:" .. prefix .. dir_name) or dir_name
-	end
-
-	return string.format("term:%s%s:%s", prefix, dir_name, branch)
-end
-
-local function build_safe_label(cwd, command)
-	local dir_name = basename(cwd)
-	local branch = run_git({ "rev-parse", "--abbrev-ref", "HEAD" }, cwd)
-	local prefix = command and (command .. "@") or ""
-	if not branch or branch == "" or branch == "HEAD" or branch == "main" then
-		return prefix ~= "" and ("term:" .. prefix .. dir_name) or dir_name
-	end
-
-	local common_git_dir = run_git({ "rev-parse", "--path-format=absolute", "--git-common-dir" }, cwd)
-	local repo_name = common_git_dir and basename(vim.fs.dirname(common_git_dir))
-	if repo_name and dir_name == (repo_name .. "." .. sanitize_branch(branch)) then
-		return prefix ~= "" and ("term:" .. prefix .. dir_name) or dir_name
-	end
-
-	return string.format("term:%s%s:%s", prefix, dir_name, branch)
+	return table.concat(parts)
 end
 
 local function unique_buffer_name(bufnr, label)
 	local base_name = label
-	if not vim.startswith(label, "term:") then
+	if not vim.startswith(label, "term:/") then
 		base_name = "terminal://" .. label
 	end
 	local current_name = vim.api.nvim_buf_get_name(bufnr)
@@ -347,7 +333,7 @@ function M.refresh(bufnr)
 		pcall(vim.cmd, "redrawtabline")
 	end
 
-	local target_name = unique_buffer_name(bufnr, build_safe_label(cwd, command))
+	local target_name = unique_buffer_name(bufnr, build_display_label(cwd, command))
 	if vim.api.nvim_buf_get_name(bufnr) == target_name then
 		return
 	end
