@@ -10,3 +10,6 @@ dot_config/media/image-catalog.local.yaml
 # Waybar Catppuccin themes are externally managed by chezmoi
 dot_config/waybar/themes/latte.css
 dot_config/waybar/themes/mocha.css
+
+# Local Codex CLI repo marker (not tracked)
+.codex
