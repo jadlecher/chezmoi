@@ -3,6 +3,8 @@ local M = {}
 local osc7_prefix = "\27]7;"
 local refresh_interval_ms = 1000
 local timers = {}
+local state_root = vim.fn.stdpath("state")
+local registry_dir = vim.fs.joinpath(state_root, "agent-workflow", "nvim")
 
 local function is_terminal_buffer(bufnr)
 	return vim.api.nvim_buf_is_valid(bufnr) and vim.bo[bufnr].buftype == "terminal"
@@ -10,6 +12,10 @@ end
 
 local function trim(text)
 	return vim.trim(text or "")
+end
+
+local function ensure_registry_dir()
+	vim.fn.mkdir(registry_dir, "p")
 end
 
 local function run_git(args, cwd)
@@ -36,12 +42,38 @@ local function sanitize_branch(branch)
 	return branch:gsub("[/\\]", "-")
 end
 
+local function write_json(path, value)
+	local file = io.open(path, "w")
+	if not file then
+		return false
+	end
+	file:write(vim.json.encode(value))
+	file:write("\n")
+	file:close()
+	return true
+end
+
 local function parse_term_uri_cwd(name)
 	local cwd = name:match("^term://(.-)//")
 	if not cwd or cwd == "" then
 		return nil
 	end
 	return normalize_dir(vim.fn.fnamemodify(cwd, ":p"))
+end
+
+local function ensure_server()
+	if vim.v.servername ~= "" then
+		return vim.v.servername
+	end
+
+	local socket_name = string.format("agent-workflow-%d.sock", vim.fn.getpid())
+	local socket_path = vim.fs.joinpath(vim.fn.stdpath("run"), socket_name)
+	local ok, server = pcall(vim.fn.serverstart, socket_path)
+	if ok and type(server) == "string" and server ~= "" then
+		return server
+	end
+
+	return vim.v.servername
 end
 
 local function terminal_argv(bufnr)
@@ -151,6 +183,17 @@ local function terminal_job_pid(bufnr)
 	return pid
 end
 
+local function tabnr_for_buf(bufnr)
+	for _, tabnr in ipairs(vim.api.nvim_list_tabpages()) do
+		for _, winid in ipairs(vim.api.nvim_tabpage_list_wins(tabnr)) do
+			if vim.api.nvim_win_get_buf(winid) == bufnr then
+				return vim.api.nvim_tabpage_get_number(tabnr)
+			end
+		end
+	end
+	return 0
+end
+
 local function proc_cwd(bufnr)
 	local pid = vim.b[bufnr].terminal_name_job_pid
 	if not pid then
@@ -227,6 +270,22 @@ local function active_command(bufnr)
 	end
 
 	return nil
+end
+
+local function tool_name(command)
+	if command == "codex" or command == "claude" or command == "opencode" then
+		return command
+	end
+	if command and command:find("codex", 1, true) then
+		return "codex"
+	end
+	if command and command:find("claude", 1, true) then
+		return "claude"
+	end
+	if command and command:find("opencode", 1, true) then
+		return "opencode"
+	end
+	return ""
 end
 
 local function parse_osc7_dir(sequence)
@@ -335,10 +394,44 @@ function M.refresh(bufnr)
 
 	local target_name = unique_buffer_name(bufnr, build_display_label(cwd, command))
 	if vim.api.nvim_buf_get_name(bufnr) == target_name then
+		M.publish(bufnr, cwd, command)
 		return
 	end
 
 	pcall(vim.api.nvim_buf_set_name, bufnr, target_name)
+	M.publish(bufnr, cwd, command)
+end
+
+function M.registry_path(bufnr)
+	return vim.fs.joinpath(registry_dir, string.format("%d-%d.json", vim.fn.getpid(), bufnr))
+end
+
+function M.publish(bufnr, cwd, command)
+	if not is_terminal_buffer(bufnr) then
+		return
+	end
+
+	ensure_registry_dir()
+	local server = ensure_server()
+	local record = {
+		server = server,
+		instance_pid = vim.fn.getpid(),
+		bufnr = bufnr,
+		tabnr = tabnr_for_buf(bufnr),
+		cwd = cwd or vim.b[bufnr].terminal_name_cwd or "",
+		tool = tool_name(command or active_command(bufnr)),
+		display_name = vim.b[bufnr].terminal_name_display or "",
+		job_pid = vim.b[bufnr].terminal_name_job_pid or terminal_job_pid(bufnr) or 0,
+		updated_at = os.date("!%Y-%m-%dT%H:%M:%SZ"),
+	}
+	write_json(M.registry_path(bufnr), record)
+end
+
+function M.cleanup_registry(bufnr)
+	local path = M.registry_path(bufnr)
+	if vim.fn.filereadable(path) == 1 then
+		vim.fn.delete(path)
+	end
 end
 
 function M.start_tracking(bufnr)
@@ -364,12 +457,89 @@ end
 function M.stop_tracking(bufnr)
 	local timer = timers[bufnr]
 	if not timer then
+		M.cleanup_registry(bufnr)
 		return
 	end
 
 	timer:stop()
 	timer:close()
 	timers[bufnr] = nil
+	M.cleanup_registry(bufnr)
+end
+
+function M.focus_buffer(tabnr, bufnr)
+	bufnr = tonumber(bufnr) or 0
+	tabnr = tonumber(tabnr) or 0
+	if bufnr <= 0 or not vim.api.nvim_buf_is_valid(bufnr) then
+		return false
+	end
+
+	if tabnr > 0 and tabnr <= vim.fn.tabpagenr("$") then
+		pcall(vim.cmd, string.format("tabnext %d", tabnr))
+	end
+
+	if vim.fn.bufwinnr(bufnr) ~= -1 then
+		pcall(vim.cmd, string.format("buffer %d", bufnr))
+	else
+		pcall(vim.cmd, string.format("sbuffer %d", bufnr))
+	end
+
+	return true
+end
+
+local function decode_scan_snapshot()
+	local scan_path = vim.fs.joinpath(state_root, "agent-workflow", "current-scan.json")
+	if vim.fn.filereadable(scan_path) == 0 then
+		return nil
+	end
+
+	local lines = vim.fn.readfile(scan_path)
+	if #lines == 0 then
+		return nil
+	end
+
+	local ok, decoded = pcall(vim.json.decode, table.concat(lines, "\n"))
+	if not ok or type(decoded) ~= "table" then
+		return nil
+	end
+
+	return decoded
+end
+
+function M.focus_session(session_key)
+	local snapshot = decode_scan_snapshot()
+	if not snapshot or type(snapshot.sessions) ~= "table" then
+		return false
+	end
+
+	local server = ensure_server()
+	for _, session in ipairs(snapshot.sessions) do
+		if session.session_key == session_key and type(session.nvim_target) == "table" then
+			local target = session.nvim_target
+			if target.server == server then
+				return M.focus_buffer(target.tabnr, target.bufnr)
+			end
+		end
+	end
+
+	return false
+end
+
+function M.focus_command(arg)
+	if arg:find("^%d+:%d+$") then
+		local tabnr, bufnr = arg:match("^(%d+):(%d+)$")
+		return M.focus_buffer(tabnr, bufnr)
+	end
+	return M.focus_session(arg)
+end
+
+ensure_registry_dir()
+ensure_server()
+
+if vim.fn.exists(":AgentWorkflowFocus") == 0 then
+	vim.api.nvim_create_user_command("AgentWorkflowFocus", function(opts)
+		M.focus_command(opts.args)
+	end, { nargs = 1 })
 end
 
 return M
