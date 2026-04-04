@@ -8,6 +8,7 @@ import datetime as dt
 import json
 import os
 import pathlib
+import re
 import shlex
 import shutil
 import sqlite3
@@ -50,6 +51,7 @@ STATE_LABELS = {
     "stale": "stale",
 }
 TOOL_ORDER = {"codex": 0, "claude": 1, "opencode": 2}
+PROC_ROOT = pathlib.Path("/proc")
 
 
 @dataclass
@@ -68,6 +70,7 @@ class SessionRecord:
     needs_action: bool
     kitty_target: dict[str, Any] | None
     nvim_target: dict[str, Any] | None
+    runtime: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -85,6 +88,30 @@ class SessionRecord:
             "needs_action": self.needs_action,
             "kitty_target": self.kitty_target,
             "nvim_target": self.nvim_target,
+            "runtime": self.runtime,
+        }
+
+
+@dataclass
+class ActiveRuntime:
+    tool: str
+    pid: int
+    pgid: int
+    cwd: str
+    started_at: str
+    tty: str
+
+    def runtime_key(self) -> str:
+        return f"{self.tool}:pgid:{self.pgid}"
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "tool": self.tool,
+            "pid": self.pid,
+            "pgid": self.pgid,
+            "cwd": self.cwd,
+            "started_at": self.started_at,
+            "tty": self.tty,
         }
 
 
@@ -281,6 +308,162 @@ def detect_tool_name(text: str) -> str:
     return ""
 
 
+def read_proc_text(path: pathlib.Path) -> str:
+    try:
+        return path.read_text().strip()
+    except OSError:
+        return ""
+
+
+def read_proc_cmdline(path: pathlib.Path) -> list[str]:
+    try:
+        raw = path.read_bytes()
+    except OSError:
+        return []
+    return [part for part in raw.decode("utf-8", "replace").split("\0") if part]
+
+
+def parse_proc_stat(path: pathlib.Path) -> dict[str, int] | None:
+    text = read_proc_text(path)
+    if not text:
+        return None
+    match = re.match(r"^(\d+)\s+\((.*)\)\s+(\S+)\s+(.*)$", text)
+    if not match:
+        return None
+    try:
+        pid = int(match.group(1))
+        fields = match.group(4).split()
+        return {
+            "pid": pid,
+            "ppid": int(fields[0]),
+            "pgrp": int(fields[1]),
+            "tty_nr": int(fields[4]),
+            "starttime": int(fields[19]),
+        }
+    except (IndexError, ValueError):
+        return None
+
+
+def proc_boot_time(proc_root: pathlib.Path = PROC_ROOT) -> int | None:
+    stat_path = proc_root / "stat"
+    for line in read_proc_text(stat_path).splitlines():
+        if line.startswith("btime "):
+            try:
+                return int(line.split()[1])
+            except (IndexError, ValueError):
+                return None
+    return None
+
+
+def proc_start_iso(stat_fields: dict[str, int], *, proc_root: pathlib.Path = PROC_ROOT) -> str:
+    boot_time = proc_boot_time(proc_root)
+    if boot_time is None:
+        return ""
+    try:
+        clock_ticks = os.sysconf("SC_CLK_TCK")
+    except (ValueError, OSError):
+        return ""
+    return epoch_to_iso(boot_time + (stat_fields["starttime"] / float(clock_ticks)))
+
+
+def proc_tty(proc_dir: pathlib.Path, stat_fields: dict[str, int]) -> str:
+    if stat_fields.get("tty_nr", 0) == 0:
+        return ""
+    try:
+        target = os.readlink(proc_dir / "fd/0")
+    except OSError:
+        return ""
+    if target.startswith("/dev/"):
+        return target
+    return ""
+
+
+def detect_runtime_process(cmdline: list[str]) -> tuple[str, bool]:
+    if not cmdline:
+        return ("", False)
+    program = pathlib.Path(cmdline[0]).name.lower()
+    if program in {"codex", "claude", "opencode"}:
+        return (program, False)
+    if program in {"node", "nodejs"}:
+        for part in cmdline[1:]:
+            if pathlib.Path(part).name.lower() == "codex" or part.lower().endswith("/codex"):
+                return ("codex", True)
+    return ("", False)
+
+
+def process_tree_depth(pid: int, ppid_by_pid: dict[int, int]) -> int:
+    depth = 0
+    seen: set[int] = set()
+    current = pid
+    while current in ppid_by_pid and current not in seen:
+        seen.add(current)
+        parent = ppid_by_pid[current]
+        if parent <= 1:
+            break
+        depth += 1
+        current = parent
+    return depth
+
+
+def discover_active_runtimes(proc_root: pathlib.Path = PROC_ROOT) -> list[ActiveRuntime]:
+    processes: list[dict[str, Any]] = []
+    ppid_by_pid: dict[int, int] = {}
+    for proc_dir in sorted(proc_root.iterdir(), key=lambda item: item.name):
+        if not proc_dir.name.isdigit():
+            continue
+        stat_fields = parse_proc_stat(proc_dir / "stat")
+        if not stat_fields:
+            continue
+        cmdline = read_proc_cmdline(proc_dir / "cmdline")
+        tool, is_wrapper = detect_runtime_process(cmdline)
+        if not tool:
+            continue
+        try:
+            cwd = normalize_path(os.readlink(proc_dir / "cwd"))
+        except OSError:
+            continue
+        if not cwd:
+            continue
+        ppid_by_pid[stat_fields["pid"]] = stat_fields["ppid"]
+        processes.append(
+            {
+                "tool": tool,
+                "pid": stat_fields["pid"],
+                "ppid": stat_fields["ppid"],
+                "pgid": stat_fields["pgrp"],
+                "cwd": cwd,
+                "started_at": proc_start_iso(stat_fields, proc_root=proc_root),
+                "tty": proc_tty(proc_dir, stat_fields),
+                "is_wrapper": is_wrapper,
+            }
+        )
+    grouped: dict[tuple[str, int], list[dict[str, Any]]] = {}
+    for process in processes:
+        grouped.setdefault((process["tool"], process["pgid"]), []).append(process)
+    runtimes: list[ActiveRuntime] = []
+    for (_, _), group in grouped.items():
+        group.sort(
+            key=lambda item: (
+                int(item["is_wrapper"]),
+                -process_tree_depth(item["pid"], ppid_by_pid),
+                -item["pid"],
+            )
+        )
+        chosen = group[0]
+        runtimes.append(
+            ActiveRuntime(
+                tool=chosen["tool"],
+                pid=chosen["pid"],
+                pgid=chosen["pgid"],
+                cwd=chosen["cwd"],
+                started_at=chosen["started_at"],
+                tty=chosen["tty"],
+            )
+        )
+    runtimes.sort(key=lambda item: (TOOL_ORDER.get(item.tool, 99), item.cwd, item.pgid))
+    return runtimes
+
+
 def load_nvim_registry() -> list[dict[str, Any]]:
     records: list[dict[str, Any]] = []
     for path in sorted(NVIM_STATE_DIR.glob("*.json")):
@@ -395,6 +578,62 @@ def select_kitty_target(session: dict[str, Any], targets: list[dict[str, Any]]) 
     return matches[0][2]
 
 
+def runtime_timestamp_is_plausible(runtime: ActiveRuntime, timestamp: str) -> bool:
+    candidate = iso_to_datetime(timestamp)
+    if not candidate:
+        return False
+    started = iso_to_datetime(runtime.started_at)
+    if not started:
+        return True
+    earliest = started - dt.timedelta(seconds=LOOKBACK_SECONDS)
+    latest = now_utc() + dt.timedelta(minutes=5)
+    return earliest <= candidate <= latest
+
+
+def attach_session_metadata(raw: dict[str, Any], runtime: ActiveRuntime | None = None) -> SessionRecord:
+    attention_score, needs_action_int = score_state(raw["state"])
+    raw["session_key"] = raw.get("session_key") or f'{raw["tool"]}:{raw["tool_session_id"]}'
+    raw["attention_score"] = attention_score
+    raw["needs_action"] = bool(needs_action_int)
+    if runtime:
+        raw["runtime"] = runtime.to_dict()
+    else:
+        raw.setdefault("runtime", None)
+    return SessionRecord(**raw)
+
+
+def enrich_sessions(sessions: list[SessionRecord]) -> list[SessionRecord]:
+    nvim_records = load_nvim_registry()
+    kitty_targets = load_kitty_targets()
+    enriched: list[SessionRecord] = []
+    for session in sessions:
+        raw = session.to_dict()
+        raw["kitty_target"] = select_kitty_target(raw, kitty_targets)
+        raw["nvim_target"] = select_nvim_target(raw, nvim_records)
+        enriched.append(SessionRecord(**raw))
+    return enriched
+
+
+def synthetic_runtime_session(runtime: ActiveRuntime, reason: str) -> dict[str, Any]:
+    return {
+        "session_key": runtime.runtime_key(),
+        "tool": runtime.tool,
+        "tool_session_id": f"pgid:{runtime.pgid}",
+        "cwd": runtime.cwd,
+        "worktree_root": git_root(runtime.cwd),
+        "branch": git_branch(runtime.cwd),
+        "title": trim_title(f"live {runtime.tool} runtime"),
+        "state": "running",
+        "state_reason": reason,
+        "last_activity_at": runtime.started_at or now_utc().isoformat(),
+        "attention_score": 0,
+        "needs_action": False,
+        "kitty_target": None,
+        "nvim_target": None,
+        "runtime": runtime.to_dict(),
+    }
+
+
 class CodexCollector:
     def __init__(self) -> None:
         self.state_db = pathlib.Path.home() / ".codex/state_5.sqlite"
@@ -434,6 +673,48 @@ class CodexCollector:
         for session in sessions:
             records.append(self._normalize_session(session, logs_by_thread.get(session["id"], []), feedback_by_thread.get(session["id"], [])))
         return records
+
+    def resolve_runtime(self, runtime: ActiveRuntime) -> dict[str, Any]:
+        if not self.available():
+            return synthetic_runtime_session(runtime, "live process found; backend session not yet resolved")
+        conn = sqlite3.connect(str(self.state_db))
+        conn.row_factory = sqlite3.Row
+        sessions = [
+            dict(row)
+            for row in conn.execute(
+                """
+                select
+                    id,
+                    cwd,
+                    title,
+                    updated_at,
+                    git_branch,
+                    agent_role,
+                    agent_nickname,
+                    archived
+                from threads
+                where archived = 0 and cwd = ?
+                order by updated_at desc
+                """,
+                (runtime.cwd,),
+            ).fetchall()
+        ]
+        logs_by_thread = self._load_state_logs(conn)
+        conn.close()
+        feedback_by_thread = self._load_feedback_logs()
+        candidates = [
+            self._normalize_session(session, logs_by_thread.get(session["id"], []), feedback_by_thread.get(session["id"], []))
+            for session in sessions
+            if runtime_timestamp_is_plausible(
+                runtime,
+                epoch_to_iso(session.get("updated_at")),
+            )
+        ]
+        if len(candidates) == 1:
+            return candidates[0]
+        if len(candidates) > 1:
+            return synthetic_runtime_session(runtime, "live process found; session ambiguous in this cwd")
+        return synthetic_runtime_session(runtime, "live process found; backend session not yet resolved")
 
     def _load_state_logs(self, conn: sqlite3.Connection) -> dict[str, list[dict[str, Any]]]:
         rows = conn.execute(
@@ -580,6 +861,36 @@ class ClaudeCollector:
                 sessions.append(self._normalize_entry({"sessionId": session_id, "fullPath": str(path)}))
         return sessions
 
+    def resolve_runtime(self, runtime: ActiveRuntime) -> dict[str, Any]:
+        index_path = self._project_index_path(runtime.cwd)
+        if not index_path.exists():
+            return synthetic_runtime_session(runtime, "live process found; backend session not yet resolved")
+        data = load_json(index_path)
+        if not isinstance(data, dict):
+            return synthetic_runtime_session(runtime, "live process found; backend session not yet resolved")
+        candidates: list[dict[str, Any]] = []
+        for entry in data.get("entries", []) or []:
+            if not isinstance(entry, dict):
+                continue
+            if normalize_path(entry.get("projectPath")) != runtime.cwd:
+                continue
+            record = self._normalize_entry(entry)
+            if runtime_timestamp_is_plausible(runtime, record.get("last_activity_at") or ""):
+                candidates.append(record)
+        candidates.sort(
+            key=lambda item: int((iso_to_datetime(item.get("last_activity_at")) or dt.datetime.fromtimestamp(0, tz=dt.timezone.utc)).timestamp()),
+            reverse=True,
+        )
+        if len(candidates) == 1:
+            return candidates[0]
+        if len(candidates) > 1:
+            return synthetic_runtime_session(runtime, "live process found; session ambiguous in this cwd")
+        return synthetic_runtime_session(runtime, "live process found; backend session not yet resolved")
+
+    def _project_index_path(self, cwd: str) -> pathlib.Path:
+        encoded = "-" + cwd.strip("/").replace("/", "-")
+        return self.projects_dir / encoded / "sessions-index.json"
+
     def _normalize_entry(self, entry: dict[str, Any]) -> dict[str, Any]:
         path = pathlib.Path(entry.get("fullPath") or "")
         tail = read_jsonl_tail(path, MAX_CLAUDE_TAIL_LINES)
@@ -696,6 +1007,46 @@ class OpencodeCollector:
             records.append(self._normalize_session(session, parts_by_session.get(session["id"], [])))
         return records
 
+    def resolve_runtime(self, runtime: ActiveRuntime) -> dict[str, Any]:
+        if not self.available():
+            return synthetic_runtime_session(runtime, "live process found; backend session not yet resolved")
+        conn = sqlite3.connect(str(self.db_path))
+        conn.row_factory = sqlite3.Row
+        sessions = [
+            dict(row)
+            for row in conn.execute(
+                """
+                select
+                    id,
+                    directory,
+                    title,
+                    permission,
+                    time_created,
+                    time_updated,
+                    time_archived
+                from session
+                where time_archived is null and directory = ?
+                order by time_updated desc
+                """,
+                (runtime.cwd,),
+            ).fetchall()
+        ]
+        parts_by_session = self._load_parts(conn)
+        conn.close()
+        candidates = [
+            self._normalize_session(session, parts_by_session.get(session["id"], []))
+            for session in sessions
+            if runtime_timestamp_is_plausible(
+                runtime,
+                epoch_to_iso(session.get("time_updated"), milliseconds=True),
+            )
+        ]
+        if len(candidates) == 1:
+            return candidates[0]
+        if len(candidates) > 1:
+            return synthetic_runtime_session(runtime, "live process found; session ambiguous in this cwd")
+        return synthetic_runtime_session(runtime, "live process found; backend session not yet resolved")
+
     def _load_parts(self, conn: sqlite3.Connection) -> dict[str, list[dict[str, Any]]]:
         rows = conn.execute(
             """
@@ -795,35 +1146,49 @@ class OpencodeCollector:
         return "running", "recent Opencode activity"
 
 
-def build_snapshot() -> dict[str, Any]:
+def build_snapshot(*, include_all: bool = False) -> dict[str, Any]:
     ensure_state_dirs()
-    nvim_records = load_nvim_registry()
-    kitty_targets = load_kitty_targets()
     sessions: list[SessionRecord] = []
-    for collector in (CodexCollector(), ClaudeCollector(), OpencodeCollector()):
-        for raw in collector.collect():
-            attention_score, needs_action_int = score_state(raw["state"])
-            raw["session_key"] = f'{raw["tool"]}:{raw["tool_session_id"]}'
-            raw["attention_score"] = attention_score
-            raw["needs_action"] = bool(needs_action_int)
-            raw["kitty_target"] = select_kitty_target(raw, kitty_targets)
-            raw["nvim_target"] = select_nvim_target(raw, nvim_records)
-            age_seconds = session_age_seconds(raw["last_activity_at"])
+    collectors = {
+        "codex": CodexCollector(),
+        "claude": ClaudeCollector(),
+        "opencode": OpencodeCollector(),
+    }
+    if include_all:
+        for collector in collectors.values():
+            for raw in collector.collect():
+                sessions.append(attach_session_metadata(raw))
+    else:
+        for runtime in discover_active_runtimes():
+            collector = collectors.get(runtime.tool)
+            if not collector:
+                continue
+            sessions.append(attach_session_metadata(collector.resolve_runtime(runtime), runtime))
+    sessions = enrich_sessions(sessions)
+    if include_all:
+        filtered_sessions: list[SessionRecord] = []
+        for session in sessions:
+            age_seconds = session_age_seconds(session.last_activity_at)
             if (
-                raw["state"] == "stale"
+                session.state == "stale"
                 and age_seconds is not None
                 and age_seconds > LOOKBACK_SECONDS
-                and not raw["kitty_target"]
-                and not raw["nvim_target"]
+                and not session.kitty_target
+                and not session.nvim_target
             ):
                 continue
-            sessions.append(SessionRecord(**raw))
+            filtered_sessions.append(session)
+        sessions = filtered_sessions
     ordered = sort_sessions(sessions)
     snapshot = {
         "generated_at": now_utc().isoformat(),
+        "mode": "all" if include_all else "active",
         "sessions": [record.to_dict() for record in ordered],
     }
-    SCAN_CACHE_PATH.write_text(json.dumps(snapshot, indent=2, sort_keys=True) + "\n")
+    try:
+        SCAN_CACHE_PATH.write_text(json.dumps(snapshot, indent=2, sort_keys=True) + "\n")
+    except OSError:
+        pass
     return snapshot
 
 
@@ -976,18 +1341,18 @@ def dashboard_sections(sessions: list[dict[str, Any]]) -> list[tuple[str, list[d
     return [(name, rows) for name, rows in groups.items()]
 
 
-def run_dashboard() -> int:
+def run_dashboard(*, include_all: bool = False) -> int:
     def main(stdscr: Any) -> int:
         curses.curs_set(0)
         stdscr.nodelay(True)
         selected_index = 0
         query = ""
-        snapshot = build_snapshot()
+        snapshot = build_snapshot(include_all=include_all)
         last_refresh = time.monotonic()
 
         while True:
             if time.monotonic() - last_refresh >= REFRESH_SECONDS:
-                snapshot = build_snapshot()
+                snapshot = build_snapshot(include_all=include_all)
                 last_refresh = time.monotonic()
 
             sessions = filter_sessions(snapshot.get("sessions", []), query)
@@ -1039,7 +1404,7 @@ def run_dashboard() -> int:
             if key in (ord("q"), 27):
                 return 0
             if key in (ord("r"),):
-                snapshot = build_snapshot()
+                snapshot = build_snapshot(include_all=include_all)
                 last_refresh = time.monotonic()
                 continue
             if key in (curses.KEY_DOWN, ord("j")) and selected_index < max(0, visible_rows - 1):
@@ -1091,13 +1456,16 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     dashboard = subparsers.add_parser("dashboard")
-    dashboard.set_defaults(func=lambda _args: run_dashboard())
+    dashboard.add_argument("--all", action="store_true", help="include historical sessions")
+    dashboard.set_defaults(func=lambda args: run_dashboard(include_all=args.all))
 
     scan = subparsers.add_parser("scan")
     scan.add_argument("--json", action="store_true", help="emit JSON snapshot")
+    scan.add_argument("--all", action="store_true", help="include historical sessions")
     scan.set_defaults(func=cmd_scan)
 
     summary = subparsers.add_parser("summary")
+    summary.add_argument("--all", action="store_true", help="include historical sessions")
     summary.set_defaults(func=cmd_summary)
 
     focus = subparsers.add_parser("focus")
@@ -1108,7 +1476,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def cmd_scan(args: argparse.Namespace) -> int:
-    snapshot = build_snapshot()
+    snapshot = build_snapshot(include_all=args.all)
     if args.json:
         json.dump(snapshot, sys.stdout, indent=2, sort_keys=True)
         sys.stdout.write("\n")
@@ -1118,8 +1486,8 @@ def cmd_scan(args: argparse.Namespace) -> int:
     return 0
 
 
-def cmd_summary(_args: argparse.Namespace) -> int:
-    snapshot = build_snapshot()
+def cmd_summary(args: argparse.Namespace) -> int:
+    snapshot = build_snapshot(include_all=args.all)
     print_summary(snapshot)
     return 0
 
