@@ -37,6 +37,11 @@ export PATH=~/.cargo/bin:$PATH
 # Add user npm binaries to PATH
 export PATH=~/.npm-global/bin:$PATH
 
+# Add opencode binaries to PATH (if installed)
+if [ -d "$HOME/.opencode/bin" ]; then
+  export PATH="$HOME/.opencode/bin:$PATH"
+fi
+
 # This enables worktrunk shell integration (https://github.com/max-sixty/worktrunk).
 if command -v wt >/dev/null 2>&1; then
   eval "$(command wt config shell init bash)"
