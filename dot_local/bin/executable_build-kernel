@@ -19,6 +19,19 @@ fi
 kernel_dir=${KERNEL_DIR:-/usr/src/linux}
 installkernel_log=${INSTALLKERNEL_LOG:-/var/log/installkernel.log}
 
+step() {
+  printf '\n==> %s\n' "$1"
+}
+
+require_command() {
+  local cmd="$1"
+  local why="$2"
+  if ! command -v "$cmd" >/dev/null 2>&1; then
+    echo "$cmd is required: $why" >&2
+    exit 1
+  fi
+}
+
 if [[ "$kernel_dir" != /* ]]; then
   echo "KERNEL_DIR must be an absolute path (got: $kernel_dir)" >&2
   exit 1
@@ -39,28 +52,20 @@ fi
 
 cd "$kernel_dir"
 
-step() {
-  printf '\n==> %s\n' "$1"
-}
+require_command make "kernel build and install steps"
+require_command emerge "@module-rebuild"
+require_command kernel-install "modern kernel installation"
 
 if [[ -r /proc/config.gz ]]; then
   step "Importing running kernel config into .config"
 
-  if ! command -v zcat >/dev/null 2>&1; then
-    echo "zcat is required to import running kernel config" >&2
-    exit 1
-  fi
+  require_command zcat "importing running kernel config"
 
   zcat /proc/config.gz > .config
 elif [[ -f .config ]]; then
   step "Using existing kernel config at ${kernel_dir}/.config"
 else
   echo "no kernel config source available: /proc/config.gz is unreadable and ${kernel_dir}/.config is missing" >&2
-  exit 1
-fi
-
-if ! command -v emerge >/dev/null 2>&1; then
-  echo "emerge is required for @module-rebuild" >&2
   exit 1
 fi
 
@@ -81,12 +86,12 @@ make modules_install
 step "Rebuilding external modules via @module-rebuild"
 emerge -q @module-rebuild
 
-step "Installing kernel via make install"
+step "Installing kernel via make install (modern kernel-install path)"
 cat <<MSG
-This system is expected to delegate kernel installation to installkernel.
-On this host, that means dracut-generated UKIs are written to the EFI system partition.
+Using SYSTEMD_KERNEL_INSTALL=1 so make install delegates to kernel-install.
+On this host, dracut-generated UKIs are written to the EFI system partition.
 MSG
-make install
+SYSTEMD_KERNEL_INSTALL=1 make install
 
 if [[ -r "$installkernel_log" ]]; then
   step "Latest installkernel log entry"

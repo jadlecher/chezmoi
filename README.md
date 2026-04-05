@@ -30,6 +30,7 @@ chezmoi apply --dry-run --refresh-externals
 
 - Run `build-kernel` as your normal user. The script self-elevates with `sudo` only for privileged steps.
 - Avoid `sudo build-kernel`: many systems use a restricted `sudo` PATH that excludes `~/.local/bin`.
+- `build-kernel` installs with `SYSTEMD_KERNEL_INSTALL=1` (modern `kernel-install` flow) even on OpenRC hosts.
 - Config source behavior:
   - If `/proc/config.gz` is readable, it is imported into `.config`.
   - If `/proc/config.gz` is unavailable, an existing `/usr/src/linux/.config` is used.
