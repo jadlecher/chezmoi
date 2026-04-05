@@ -32,7 +32,7 @@
 /.config/waybar/**
 {{- end }}
 
-{{- if not (contains $osid "gentoo") }}
+{{- if not (contains "gentoo" $osid) }}
 # Kernel build helper is Gentoo-specific
 /.local/bin/build-kernel
 {{- end }}
