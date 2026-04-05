@@ -14,11 +14,10 @@ from unittest import mock
 
 _REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
 _PRIMARY_MODULE_PATH = _REPO_ROOT / "dot_local/bin/executable_agent-workflow"
-_PYTHON_REFERENCE_PATH = _REPO_ROOT / "dot_local/lib/agent-workflow-python-reference.py"
 if _PRIMARY_MODULE_PATH.exists() and _PRIMARY_MODULE_PATH.read_text(errors="ignore").startswith("#!/usr/bin/env python"):
     MODULE_PATH = _PRIMARY_MODULE_PATH
 else:
-    MODULE_PATH = _PYTHON_REFERENCE_PATH
+    raise unittest.SkipTest("agent-workflow Python implementation is no longer vendored in this repo")
 LOADER = importlib.machinery.SourceFileLoader("agent_workflow", str(MODULE_PATH))
 SPEC = importlib.util.spec_from_loader(LOADER.name, LOADER)
 agent_workflow = importlib.util.module_from_spec(SPEC)
