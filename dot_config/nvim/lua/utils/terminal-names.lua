@@ -1,8 +1,12 @@
 local M = {}
 
 local osc7_prefix = "\27]7;"
-local refresh_interval_ms = 1000
+local visible_refresh_interval_ms = 3000
+local hidden_refresh_interval_ms = 15000
+local publish_heartbeat_interval_ms = 15000
 local timers = {}
+local timer_intervals = {}
+local publish_state = {}
 local state_root = vim.fn.stdpath("state")
 local registry_dir = vim.fs.joinpath(state_root, "agent-workflow", "nvim")
 
@@ -222,27 +226,6 @@ local function command_from_pid(pid)
 	return proc and proc.name or nil
 end
 
-local function deepest_child_name(pid)
-	local children = vim.api.nvim_get_proc_children(pid)
-	if #children == 0 then
-		return nil
-	end
-
-	for i = #children, 1, -1 do
-		local child_pid = children[i]
-		local descendant = deepest_child_name(child_pid)
-		if descendant then
-			return descendant
-		end
-		local child_name = command_from_pid(child_pid)
-		if child_name and not is_shell_command(child_name) then
-			return child_name
-		end
-	end
-
-	return nil
-end
-
 local function active_command(bufnr)
 	local pid = vim.b[bufnr].terminal_name_job_pid
 	if not pid then
@@ -251,11 +234,6 @@ local function active_command(bufnr)
 	end
 	if not pid then
 		return nil
-	end
-
-	local child_name = deepest_child_name(pid)
-	if child_name then
-		return child_name
 	end
 
 	local root_name = command_from_pid(pid)
@@ -270,6 +248,18 @@ local function active_command(bufnr)
 	end
 
 	return nil
+end
+
+local function is_buffer_visible(bufnr)
+	local wins = vim.fn.win_findbuf(bufnr)
+	return type(wins) == "table" and #wins > 0
+end
+
+local function refresh_interval_for_buffer(bufnr)
+	if is_buffer_visible(bufnr) then
+		return visible_refresh_interval_ms
+	end
+	return hidden_refresh_interval_ms
 end
 
 local function tool_name(command)
@@ -373,6 +363,70 @@ function M.handle_term_request(event)
 	M.refresh(event.buf)
 end
 
+function M.publish(bufnr, cwd, command)
+	if not is_terminal_buffer(bufnr) then
+		return
+	end
+
+	ensure_registry_dir()
+	local server = ensure_server()
+	local tool = tool_name(command or active_command(bufnr))
+	local display_name = vim.b[bufnr].terminal_name_display or ""
+	local tabnr = tabnr_for_buf(bufnr)
+	local job_pid = vim.b[bufnr].terminal_name_job_pid or terminal_job_pid(bufnr) or 0
+	local payload = {
+		server = server,
+		instance_pid = vim.fn.getpid(),
+		bufnr = bufnr,
+		tabnr = tabnr,
+		cwd = cwd or vim.b[bufnr].terminal_name_cwd or "",
+		tool = tool,
+		display_name = display_name,
+		job_pid = job_pid,
+	}
+	local now_ms = vim.uv.now()
+	local payload_json = vim.json.encode(payload)
+	local prev = publish_state[bufnr]
+	local heartbeat_due = not prev or now_ms - prev.last_ms >= publish_heartbeat_interval_ms
+	if prev and prev.payload_json == payload_json and not heartbeat_due then
+		return
+	end
+
+	local record = vim.deepcopy(payload)
+	record.updated_at = os.date("!%Y-%m-%dT%H:%M:%SZ")
+	write_json(M.registry_path(bufnr), record)
+	publish_state[bufnr] = {
+		payload_json = payload_json,
+		last_ms = now_ms,
+	}
+end
+
+local function schedule_tracking_tick(bufnr)
+	local timer = timers[bufnr]
+	if not timer then
+		return
+	end
+	if not is_terminal_buffer(bufnr) then
+		M.stop_tracking(bufnr)
+		return
+	end
+
+	local next_interval = refresh_interval_for_buffer(bufnr)
+	timer_intervals[bufnr] = next_interval
+	timer:start(
+		next_interval,
+		0,
+		vim.schedule_wrap(function()
+			if not is_terminal_buffer(bufnr) then
+				M.stop_tracking(bufnr)
+				return
+			end
+			M.refresh(bufnr)
+			schedule_tracking_tick(bufnr)
+		end)
+	)
+end
+
 function M.refresh(bufnr)
 	if not is_terminal_buffer(bufnr) then
 		return
@@ -385,46 +439,32 @@ function M.refresh(bufnr)
 	vim.b[bufnr].terminal_name_cwd = cwd
 
 	local command = active_command(bufnr)
-	local old_display = vim.b[bufnr].terminal_name_display
 	local new_display = build_display_label(cwd, command)
+	local old_display = vim.b[bufnr].terminal_name_display
 	vim.b[bufnr].terminal_name_display = new_display
 	if old_display ~= new_display then
 		pcall(vim.cmd, "redrawtabline")
 	end
 
-	local target_name = unique_buffer_name(bufnr, build_display_label(cwd, command))
-	if vim.api.nvim_buf_get_name(bufnr) == target_name then
-		M.publish(bufnr, cwd, command)
-		return
+	local target_name = unique_buffer_name(bufnr, new_display)
+	if vim.api.nvim_buf_get_name(bufnr) ~= target_name then
+		pcall(vim.api.nvim_buf_set_name, bufnr, target_name)
 	end
 
-	pcall(vim.api.nvim_buf_set_name, bufnr, target_name)
 	M.publish(bufnr, cwd, command)
+
+	local timer = timers[bufnr]
+	if timer then
+		local next_interval = refresh_interval_for_buffer(bufnr)
+		if timer_intervals[bufnr] ~= next_interval then
+			timer:stop()
+			schedule_tracking_tick(bufnr)
+		end
+	end
 end
 
 function M.registry_path(bufnr)
 	return vim.fs.joinpath(registry_dir, string.format("%d-%d.json", vim.fn.getpid(), bufnr))
-end
-
-function M.publish(bufnr, cwd, command)
-	if not is_terminal_buffer(bufnr) then
-		return
-	end
-
-	ensure_registry_dir()
-	local server = ensure_server()
-	local record = {
-		server = server,
-		instance_pid = vim.fn.getpid(),
-		bufnr = bufnr,
-		tabnr = tabnr_for_buf(bufnr),
-		cwd = cwd or vim.b[bufnr].terminal_name_cwd or "",
-		tool = tool_name(command or active_command(bufnr)),
-		display_name = vim.b[bufnr].terminal_name_display or "",
-		job_pid = vim.b[bufnr].terminal_name_job_pid or terminal_job_pid(bufnr) or 0,
-		updated_at = os.date("!%Y-%m-%dT%H:%M:%SZ"),
-	}
-	write_json(M.registry_path(bufnr), record)
 end
 
 function M.cleanup_registry(bufnr)
@@ -441,22 +481,14 @@ function M.start_tracking(bufnr)
 
 	local timer = vim.uv.new_timer()
 	timers[bufnr] = timer
-	timer:start(
-		refresh_interval_ms,
-		refresh_interval_ms,
-		vim.schedule_wrap(function()
-			if not is_terminal_buffer(bufnr) then
-				M.stop_tracking(bufnr)
-				return
-			end
-			M.refresh(bufnr)
-		end)
-	)
+	schedule_tracking_tick(bufnr)
 end
 
 function M.stop_tracking(bufnr)
 	local timer = timers[bufnr]
 	if not timer then
+		publish_state[bufnr] = nil
+		timer_intervals[bufnr] = nil
 		M.cleanup_registry(bufnr)
 		return
 	end
@@ -464,6 +496,8 @@ function M.stop_tracking(bufnr)
 	timer:stop()
 	timer:close()
 	timers[bufnr] = nil
+	publish_state[bufnr] = nil
+	timer_intervals[bufnr] = nil
 	M.cleanup_registry(bufnr)
 end
 
