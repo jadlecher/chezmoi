@@ -2,12 +2,35 @@
 set -euo pipefail
 
 if (( EUID != 0 )); then
-  echo "build-kernel must be run as root" >&2
-  exit 1
+  if ! command -v sudo >/dev/null 2>&1; then
+    echo "sudo is required to elevate privileges for build-kernel" >&2
+    exit 1
+  fi
+
+  script_path=$(readlink -f "${BASH_SOURCE[0]}")
+  if [[ -z "$script_path" || ! -x "$script_path" ]]; then
+    echo "unable to resolve executable script path for build-kernel" >&2
+    exit 1
+  fi
+
+  exec sudo --preserve-env=KERNEL_DIR,INSTALLKERNEL_LOG,BUILD_JOBS "$script_path" "$@"
 fi
 
 kernel_dir=${KERNEL_DIR:-/usr/src/linux}
 installkernel_log=${INSTALLKERNEL_LOG:-/var/log/installkernel.log}
+
+if [[ "$kernel_dir" != /* ]]; then
+  echo "KERNEL_DIR must be an absolute path (got: $kernel_dir)" >&2
+  exit 1
+fi
+
+case "$kernel_dir" in
+  /usr/src/*) ;;
+  *)
+    echo "KERNEL_DIR must be under /usr/src for safety (got: $kernel_dir)" >&2
+    exit 1
+    ;;
+esac
 
 if [[ ! -d "$kernel_dir" ]]; then
   echo "kernel source directory not found: $kernel_dir" >&2

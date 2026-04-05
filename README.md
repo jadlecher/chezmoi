@@ -26,6 +26,12 @@ chezmoi apply --dry-run --refresh-externals
 ~/.config/media/scripts/sync-images.py
 ```
 
+## Kernel build helper
+
+- Run `build-kernel` as your normal user. The script self-elevates with `sudo` only for privileged steps.
+- Avoid `sudo build-kernel`: many systems use a restricted `sudo` PATH that excludes `~/.local/bin`.
+- Optional overrides: `KERNEL_DIR`, `INSTALLKERNEL_LOG`, and `BUILD_JOBS`.
+
 ## Codex notifications
 
 - Codex TUI notifications for permission prompts are managed via `.chezmoiscripts/run_onchange_codex-notifications.sh`.
