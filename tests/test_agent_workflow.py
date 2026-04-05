@@ -14,15 +14,15 @@ from unittest import mock
 
 _REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
 _PRIMARY_MODULE_PATH = _REPO_ROOT / "dot_local/bin/executable_agent-workflow"
-if _PRIMARY_MODULE_PATH.exists() and _PRIMARY_MODULE_PATH.read_text(errors="ignore").startswith("#!/usr/bin/env python"):
-    MODULE_PATH = _PRIMARY_MODULE_PATH
+HAS_PYTHON_IMPL = _PRIMARY_MODULE_PATH.exists() and _PRIMARY_MODULE_PATH.read_text(errors="ignore").startswith("#!/usr/bin/env python")
+if HAS_PYTHON_IMPL:
+    LOADER = importlib.machinery.SourceFileLoader("agent_workflow", str(_PRIMARY_MODULE_PATH))
+    SPEC = importlib.util.spec_from_loader(LOADER.name, LOADER)
+    agent_workflow = importlib.util.module_from_spec(SPEC)
+    sys.modules[SPEC.name] = agent_workflow
+    LOADER.exec_module(agent_workflow)
 else:
-    raise unittest.SkipTest("agent-workflow Python implementation is no longer vendored in this repo")
-LOADER = importlib.machinery.SourceFileLoader("agent_workflow", str(MODULE_PATH))
-SPEC = importlib.util.spec_from_loader(LOADER.name, LOADER)
-agent_workflow = importlib.util.module_from_spec(SPEC)
-sys.modules[SPEC.name] = agent_workflow
-LOADER.exec_module(agent_workflow)
+    agent_workflow = None
 
 
 def proc_stat_line(pid: int, comm: str, ppid: int, pgrp: int, tty_nr: int, starttime: int) -> str:
@@ -43,6 +43,7 @@ def write_proc_entry(root: pathlib.Path, *, pid: int, comm: str, cmdline: list[s
     (proc_dir / "fd/0").symlink_to(tty)
 
 
+@unittest.skipUnless(HAS_PYTHON_IMPL, "agent-workflow Python implementation is no longer vendored in this repo")
 class RuntimeDetectionTests(unittest.TestCase):
     def test_wrapper_and_child_collapse_to_one_runtime(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -122,6 +123,7 @@ class RuntimeDetectionTests(unittest.TestCase):
             self.assertEqual([(runtime.tool, runtime.cwd) for runtime in runtimes], [("claude", str(repo_a.resolve())), ("opencode", str(repo_b.resolve()))])
 
 
+@unittest.skipUnless(HAS_PYTHON_IMPL, "agent-workflow Python implementation is no longer vendored in this repo")
 class ResolverTests(unittest.TestCase):
     def test_codex_runtime_resolves_single_matching_session(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -231,6 +233,7 @@ class ResolverTests(unittest.TestCase):
             self.assertIn("not yet resolved", result["state_reason"])
 
 
+@unittest.skipUnless(HAS_PYTHON_IMPL, "agent-workflow Python implementation is no longer vendored in this repo")
 class CliTests(unittest.TestCase):
     def test_scan_json_defaults_to_active_only(self) -> None:
         runtime = agent_workflow.ActiveRuntime(tool="codex", pid=1, pgid=800, cwd="/tmp/project", started_at=agent_workflow.now_utc().isoformat(), tty="")
