@@ -226,6 +226,21 @@ local function command_from_pid(pid)
 	return proc and proc.name or nil
 end
 
+local function most_recent_direct_child_pid(pid)
+	local children = vim.api.nvim_get_proc_children(pid)
+	if type(children) ~= "table" or #children == 0 then
+		return nil
+	end
+
+	local newest = nil
+	for _, child in ipairs(children) do
+		if type(child) == "number" and child > 0 and (not newest or child > newest) then
+			newest = child
+		end
+	end
+	return newest
+end
+
 local function active_command(bufnr)
 	local pid = vim.b[bufnr].terminal_name_job_pid
 	if not pid then
@@ -234,6 +249,14 @@ local function active_command(bufnr)
 	end
 	if not pid then
 		return nil
+	end
+
+	local child_pid = most_recent_direct_child_pid(pid)
+	if child_pid then
+		local child_name = command_from_pid(child_pid)
+		if child_name then
+			return child_name
+		end
 	end
 
 	local root_name = command_from_pid(pid)
@@ -263,19 +286,7 @@ local function refresh_interval_for_buffer(bufnr)
 end
 
 local function tool_name(command)
-	if command == "codex" or command == "claude" or command == "opencode" then
-		return command
-	end
-	if command and command:find("codex", 1, true) then
-		return "codex"
-	end
-	if command and command:find("claude", 1, true) then
-		return "claude"
-	end
-	if command and command:find("opencode", 1, true) then
-		return "opencode"
-	end
-	return ""
+	return command or ""
 end
 
 local function parse_osc7_dir(sequence)
