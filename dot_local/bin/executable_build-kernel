@@ -39,10 +39,23 @@ fi
 
 cd "$kernel_dir"
 
-if [[ ! -f .config ]]; then
-  echo "kernel config not found: $kernel_dir/.config" >&2
+step() {
+  printf '\n==> %s\n' "$1"
+}
+
+step "Importing running kernel config into .config"
+
+if [[ ! -r /proc/config.gz ]]; then
+  echo "running kernel config not readable: /proc/config.gz" >&2
   exit 1
 fi
+
+if ! command -v zcat >/dev/null 2>&1; then
+  echo "zcat is required to import running kernel config" >&2
+  exit 1
+fi
+
+zcat /proc/config.gz > .config
 
 if ! command -v emerge >/dev/null 2>&1; then
   echo "emerge is required for @module-rebuild" >&2
@@ -51,10 +64,6 @@ fi
 
 kernel_release=$(make -s kernelrelease)
 jobs=${BUILD_JOBS:-$(nproc)}
-
-step() {
-  printf '\n==> %s\n' "$1"
-}
 
 step "Target kernel release: ${kernel_release}"
 step "Reviewing new kernel config options with make oldconfig"
