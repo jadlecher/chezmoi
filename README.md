@@ -30,6 +30,11 @@ chezmoi apply --dry-run --refresh-externals
 
 - Run `build-kernel` as your normal user. The script self-elevates with `sudo` only for privileged steps.
 - Avoid `sudo build-kernel`: many systems use a restricted `sudo` PATH that excludes `~/.local/bin`.
+- Config source behavior:
+  - If `/proc/config.gz` is readable, it is imported into `.config`.
+  - If `/proc/config.gz` is unavailable, an existing `/usr/src/linux/.config` is used.
+  - If neither source exists, the script exits with an error.
+- `make oldconfig` runs before `make -s kernelrelease` so generated config state exists for release detection.
 - Optional overrides: `KERNEL_DIR`, `INSTALLKERNEL_LOG`, and `BUILD_JOBS`.
 
 ## Codex notifications
