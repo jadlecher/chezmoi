@@ -25,8 +25,14 @@
 !/.codex/config.toml
 
 {{- $osrel := lower .chezmoi.kernel.osrelease -}}
+{{- $osid := lower .chezmoi.osRelease.id -}}
 {{- if or (contains $osrel "microsoft") (contains $osrel "wsl") }}
 # Hyprland and Waybar do not apply on WSL
 /.config/hypr/**
 /.config/waybar/**
+{{- end }}
+
+{{- if not (contains $osid "gentoo") }}
+# Kernel build helper is Gentoo-specific
+/.local/bin/build-kernel
 {{- end }}

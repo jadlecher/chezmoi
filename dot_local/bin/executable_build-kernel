@@ -1,0 +1,65 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if (( EUID != 0 )); then
+  echo "build-kernel must be run as root" >&2
+  exit 1
+fi
+
+kernel_dir=${KERNEL_DIR:-/usr/src/linux}
+installkernel_log=${INSTALLKERNEL_LOG:-/var/log/installkernel.log}
+
+if [[ ! -d "$kernel_dir" ]]; then
+  echo "kernel source directory not found: $kernel_dir" >&2
+  exit 1
+fi
+
+cd "$kernel_dir"
+
+if [[ ! -f .config ]]; then
+  echo "kernel config not found: $kernel_dir/.config" >&2
+  exit 1
+fi
+
+if ! command -v emerge >/dev/null 2>&1; then
+  echo "emerge is required for @module-rebuild" >&2
+  exit 1
+fi
+
+kernel_release=$(make -s kernelrelease)
+jobs=${BUILD_JOBS:-$(nproc)}
+
+step() {
+  printf '\n==> %s\n' "$1"
+}
+
+step "Target kernel release: ${kernel_release}"
+step "Reviewing new kernel config options with make oldconfig"
+make oldconfig
+
+step "Building kernel with ${jobs} job(s)"
+make -j"${jobs}"
+
+step "Installing kernel modules"
+make modules_install
+
+step "Rebuilding external modules via @module-rebuild"
+emerge -q @module-rebuild
+
+step "Installing kernel via make install"
+cat <<MSG
+This system is expected to delegate kernel installation to installkernel.
+On this host, that means dracut-generated UKIs are written to the EFI system partition.
+MSG
+make install
+
+if [[ -r "$installkernel_log" ]]; then
+  step "Latest installkernel log entry"
+  tail -n 1 "$installkernel_log"
+else
+  step "installkernel log not readable at ${installkernel_log}"
+fi
+
+step "Post-install checks"
+printf 'Expected EFI output path: %s\n' '/efi/EFI/Linux/gentoo-<version>.efi'
+printf 'Run after reboot to confirm the new kernel: %s\n' 'uname -r'
