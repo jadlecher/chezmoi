@@ -16,7 +16,6 @@
     "backlight",
     "keyboard-state",
     "battery",
-    "custom/agent-workflow",
     "clock"
   ],
   "hyprland/submap": {
@@ -86,12 +85,6 @@
       "",
       ""
     ]
-  },
-  "custom/agent-workflow": {
-    "exec": "~/.local/bin/agent-workflow summary",
-    "interval": 5,
-    "format": "{}",
-    "tooltip": false
   },
   "network": {
     // "interface": "wlp115s0", // (Optional) To force the use of this interface
