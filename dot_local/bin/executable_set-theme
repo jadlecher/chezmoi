@@ -76,7 +76,7 @@ if [[ "${kernel_release,,}" == *microsoft* ]] || [[ "${kernel_release,,}" == *ws
   is_wsl=1
 fi
 
-declare -a apps=(kitty nvim i3status-rust mako sway qutebrowser codex)
+declare -a apps=(kitty nvim i3status-rust mako sway qutebrowser codex kvantum)
 if (( is_wsl == 0 )); then
   apps+=(waybar hypr)
 fi

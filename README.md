@@ -68,6 +68,17 @@ chezmoi apply --dry-run --refresh-externals
 - Only `latte.conf` and `mocha.conf` are managed externally.
 - To update, bump the pinned Catppuccin Hyprland commit in `.chezmoiexternal.toml.tmpl` and update checksums.
 
+## Kvantum Catppuccin themes (Qt apps, including wpa_gui)
+
+- Qt theming is switched by `~/.local/bin/set-theme` via `~/.config/kvantum/scripts/set-theme.sh`.
+- The selector prefers Catppuccin Lavender variants for each flavor:
+  - `dark` -> Mocha + Lavender
+  - `light` -> Latte + Lavender
+- Linux-generic behavior: if Kvantum or Catppuccin Kvantum themes are unavailable, the step is skipped with a warning.
+- Gentoo caveat: current ebuilds are not stable on `amd64` and require keyword acceptance before install:
+  - `x11-themes/kvantum` (`~amd64` in Gentoo tree)
+  - `x11-themes/catppuccin-kvantum` (`~amd64`/masked in guru)
+
 ## WSL behavior
 
 - WSL is auto-detected from the Linux kernel release string (looking for `microsoft` or `wsl`).
