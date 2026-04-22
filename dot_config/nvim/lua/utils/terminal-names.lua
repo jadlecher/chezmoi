@@ -325,26 +325,26 @@ local function build_display_label(cwd, command)
 	return table.concat(parts)
 end
 
-local function unique_buffer_name(bufnr, label)
-	local base_name = label
-	if not vim.startswith(label, "term:/") then
-		base_name = "terminal://" .. label
-	end
-	local current_name = vim.api.nvim_buf_get_name(bufnr)
-	if current_name == base_name then
-		return current_name
-	end
-
-	local candidate = base_name
-	local suffix = 2
-	while true do
-		local existing = vim.fn.bufnr(candidate)
-		if existing == -1 or existing == bufnr then
-			return candidate
+local function display_label_in_use(bufnr, label)
+	for _, existing_bufnr in ipairs(vim.api.nvim_list_bufs()) do
+		if existing_bufnr ~= bufnr and is_terminal_buffer(existing_bufnr) then
+			local existing_label = vim.b[existing_bufnr].terminal_name_display
+			if existing_label == label then
+				return true
+			end
 		end
-		candidate = string.format("%s [%d]", base_name, suffix)
+	end
+	return false
+end
+
+local function unique_display_label(bufnr, label)
+	local candidate = label
+	local suffix = 2
+	while display_label_in_use(bufnr, candidate) do
+		candidate = string.format("%s [%d]", label, suffix)
 		suffix = suffix + 1
 	end
+	return candidate
 end
 
 function M.capture_initial_cwd(bufnr)
@@ -450,17 +450,13 @@ function M.refresh(bufnr)
 	vim.b[bufnr].terminal_name_cwd = cwd
 
 	local command = active_command(bufnr)
-	local new_display = build_display_label(cwd, command)
+	local new_display = unique_display_label(bufnr, build_display_label(cwd, command))
 	local old_display = vim.b[bufnr].terminal_name_display
 	vim.b[bufnr].terminal_name_display = new_display
 	if old_display ~= new_display then
 		pcall(vim.cmd, "redrawtabline")
 	end
-
-	local target_name = unique_buffer_name(bufnr, new_display)
-	if vim.api.nvim_buf_get_name(bufnr) ~= target_name then
-		pcall(vim.api.nvim_buf_set_name, bufnr, target_name)
-	end
+	-- Keep canonical terminal buffer names (term://...) to preserve alternate-buffer jumps (^ / <C-6>).
 
 	M.publish(bufnr, cwd, command)
 
