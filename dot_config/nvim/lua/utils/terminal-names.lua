@@ -455,6 +455,7 @@ function M.refresh(bufnr)
 	vim.b[bufnr].terminal_name_display = new_display
 	if old_display ~= new_display then
 		pcall(vim.cmd, "redrawtabline")
+		pcall(vim.cmd, "redrawstatus")
 	end
 	-- Keep canonical terminal buffer names (term://...) to preserve alternate-buffer jumps (^ / <C-6>).
 
@@ -468,6 +469,32 @@ function M.refresh(bufnr)
 			schedule_tracking_tick(bufnr)
 		end
 	end
+end
+
+function M.is_terminal_buffer(bufnr)
+	return is_terminal_buffer(bufnr)
+end
+
+function M.display_name(bufnr)
+	if not is_terminal_buffer(bufnr) then
+		return nil
+	end
+
+	local display = vim.b[bufnr].terminal_name_display
+	if display and display ~= "" then
+		return display
+	end
+
+	local cwd = vim.b[bufnr].terminal_name_cwd or proc_cwd(bufnr) or M.capture_initial_cwd(bufnr)
+	if not cwd or vim.fn.isdirectory(cwd) == 0 then
+		local raw_name = vim.api.nvim_buf_get_name(bufnr)
+		return raw_name ~= "" and raw_name or nil
+	end
+
+	vim.b[bufnr].terminal_name_cwd = cwd
+	local computed = unique_display_label(bufnr, build_display_label(cwd, active_command(bufnr)))
+	vim.b[bufnr].terminal_name_display = computed
+	return computed
 end
 
 function M.registry_path(bufnr)
