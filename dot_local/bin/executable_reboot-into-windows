@@ -1,0 +1,96 @@
+#!/bin/bash
+# Boot to Windows Boot Manager on next reboot
+set -euo pipefail
+
+usage() {
+  cat <<'USAGE'
+Usage: reboot-into-windows [--dry-run]
+
+Options:
+  --dry-run   Show selected entry and commands, but do not change firmware state or reboot.
+  -h, --help  Show this help.
+USAGE
+}
+
+dry_run=false
+case "${1:-}" in
+  "") ;;
+  --dry-run) dry_run=true ;;
+  -h|--help)
+    usage
+    exit 0
+    ;;
+  *)
+    echo "Error: Unknown argument: $1" >&2
+    usage >&2
+    exit 2
+    ;;
+esac
+
+# Check if efibootmgr is available
+if ! command -v efibootmgr &>/dev/null; then
+  echo "Error: efibootmgr not found." >&2
+  exit 1
+fi
+
+# Read EFI boot entries once for consistent parsing
+mapfile -t efi_lines < <(efibootmgr)
+
+# Collect BootXXXX IDs for Windows Boot Manager entries
+windows_ids=()
+for line in "${efi_lines[@]}"; do
+  if [[ "$line" =~ ^Boot([0-9A-Fa-f]{4})\*?[[:space:]]+Windows[[:space:]]+Boot[[:space:]]+Manager([[:space:]]|$) ]]; then
+    windows_ids+=("${BASH_REMATCH[1]^^}")
+  fi
+done
+
+if [[ ${#windows_ids[@]} -eq 0 ]]; then
+  echo "Error: 'Windows Boot Manager' entry not found." >&2
+  echo "Available boot entries:" >&2
+  printf '%s\n' "${efi_lines[@]}" >&2
+  exit 1
+fi
+
+# Select the Windows entry that appears first in BootOrder.
+boot_number=""
+bootorder_line=""
+for line in "${efi_lines[@]}"; do
+  if [[ "$line" =~ ^BootOrder:[[:space:]]*(.+)$ ]]; then
+    bootorder_line="${BASH_REMATCH[1]}"
+    break
+  fi
+done
+
+if [[ -n "$bootorder_line" ]]; then
+  IFS=',' read -r -a order_ids <<<"$bootorder_line"
+  for ordered_id in "${order_ids[@]}"; do
+    ordered_id="${ordered_id^^}"
+    for win_id in "${windows_ids[@]}"; do
+      if [[ "$ordered_id" == "$win_id" ]]; then
+        boot_number="$win_id"
+        break 2
+      fi
+    done
+  done
+fi
+
+# Fallback if BootOrder is missing or doesn't include matching entries.
+if [[ -z "$boot_number" ]]; then
+  boot_number="${windows_ids[0]}"
+fi
+
+if $dry_run; then
+  echo "Dry run: selected Windows Boot Manager entry Boot$boot_number"
+  echo "Dry run: would run: sudo efibootmgr -n $boot_number"
+  echo "Dry run: would run: loginctl reboot"
+  exit 0
+fi
+
+# Set next boot entry
+if ! sudo efibootmgr -n "$boot_number" >/dev/null; then
+  echo "Error: Failed to set next boot entry" >&2
+  exit 1
+fi
+
+echo "Windows will boot next (Boot$boot_number)."
+loginctl reboot
