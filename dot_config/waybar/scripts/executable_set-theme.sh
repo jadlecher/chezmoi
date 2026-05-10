@@ -73,4 +73,4 @@ if [[ ! -x "$session_script" ]]; then
   exit 1
 fi
 
-"$session_script" reconcile
+"$session_script" restart

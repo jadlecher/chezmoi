@@ -77,8 +77,9 @@ if [[ "${kernel_release,,}" == *microsoft* ]] || [[ "${kernel_release,,}" == *ws
 fi
 
 declare -a apps=(kitty nvim i3status-rust mako sway qutebrowser codex kvantum)
+declare -a display_apps=()
 if (( is_wsl == 0 )); then
-  apps+=(waybar hypr)
+  display_apps=(hypr waybar)
 fi
 
 declare -A pids
@@ -116,6 +117,25 @@ for app in "${apps[@]}"; do
       failures["$app"]="exit code $rc"
       ((failure_count += 1))
     fi
+  fi
+done
+
+for app in "${display_apps[@]}"; do
+  script="$HOME/.config/$app/scripts/set-theme.sh"
+  logs["$app"]="$log_dir/$app.log"
+
+  if [[ ! -f "$script" ]]; then
+    failures["$app"]="missing script: $script"
+    ((failure_count += 1))
+    continue
+  fi
+
+  if "$script" "$theme" >"${logs[$app]}" 2>&1; then
+    :
+  else
+    rc=$?
+    failures["$app"]="exit code $rc"
+    ((failure_count += 1))
   fi
 done
 
