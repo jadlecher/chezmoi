@@ -11,6 +11,7 @@ I use it to track and version the config files I keep on my machine, while editi
 - `dot_config/hypr` - my Hyprland / Hypridle config
 - `dot_config/waybar` - my Waybar config
 - `dot_config/media` - shared theme image catalog and helper scripts
+- `dot_local/share/wayland-sessions` - custom user session entries
 
 ## Chezmoi
 
@@ -67,6 +68,14 @@ chezmoi apply --dry-run --refresh-externals
 - Hyprland Catppuccin theme files are fetched via `.chezmoiexternal.toml.tmpl`, not vendored in this repo.
 - Only `latte.conf` and `mocha.conf` are managed externally.
 - To update, bump the pinned Catppuccin Hyprland commit in `.chezmoiexternal.toml.tmpl` and update checksums.
+
+## Hyprland session wrapper
+
+- `~/.local/bin/start-hyprland-dbus` wraps `/usr/bin/start-hyprland` in `dbus-run-session`.
+- `~/.local/share/wayland-sessions/hyprland-dbus.desktop` provides a session entry that launches Hyprland with an inherited `DBUS_SESSION_BUS_ADDRESS`.
+- This is Linux-generic and avoids patching packaged session files under `/usr/share`.
+- `run_always_fix-hyprland-session-dbus.sh` mirrors that desktop entry into `/usr/local/share/wayland-sessions/` so `greetd`/`regreet` can see it without modifying package-owned files.
+- Gentoo caveat: this repo uses `sudo install` into `/usr/local/share/wayland-sessions/`, which is Gentoo-safe and Linux-generic, but still depends on local privilege policy during `chezmoi apply`.
 
 ## Kvantum Catppuccin themes (Qt apps, including wpa_gui)
 

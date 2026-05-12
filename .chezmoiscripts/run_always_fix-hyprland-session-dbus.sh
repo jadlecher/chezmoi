@@ -1,16 +1,19 @@
 #!/bin/sh
-# Ensure the Hyprland wayland session uses dbus-run-session.
-# On OpenRC (no systemd --user), DBUS_SESSION_BUS_ADDRESS is not set
-# automatically. This wraps start-hyprland with dbus-run-session so that all
-# Hyprland child processes get a proper session bus.
+# Ensure a D-Bus-wrapped Hyprland session entry is available system-wide for
+# greeters that only enumerate system session directories.
 #
-# This must be run_always because portage can overwrite the desktop file on
-# gui-wm/hyprland upgrades.
+# On OpenRC-style setups, DBUS_SESSION_BUS_ADDRESS is not exported unless the
+# graphical session is started inside dbus-run-session. We keep the wrapper and
+# primary desktop entry in the user's home, then mirror the session entry into
+# /usr/local/share/wayland-sessions so greetd/regreet can reliably see it.
 set -eu
 
-DESKTOP=/usr/share/wayland-sessions/hyprland.desktop
-WANT='Exec=dbus-run-session -- /usr/bin/start-hyprland'
+SOURCE_DESKTOP="${HOME}/.local/share/wayland-sessions/hyprland-dbus.desktop"
+TARGET_DESKTOP="/usr/local/share/wayland-sessions/hyprland-dbus.desktop"
 
-if ! grep -qF "$WANT" "$DESKTOP" 2>/dev/null; then
-    sudo sed -i 's|^Exec=.*|'"$WANT"'|' "$DESKTOP"
+if [ ! -f "$SOURCE_DESKTOP" ]; then
+    exit 0
 fi
+
+sudo install -d -m 0755 /usr/local/share/wayland-sessions
+sudo install -m 0644 "$SOURCE_DESKTOP" "$TARGET_DESKTOP"

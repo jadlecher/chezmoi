@@ -1,0 +1,6 @@
+[Desktop Entry]
+Name=Hyprland (D-Bus)
+Comment=Start Hyprland inside a D-Bus session
+Exec=/home/james/.local/bin/start-hyprland-dbus
+Type=Application
+Keywords=tiling;wayland;compositor;dbus;
