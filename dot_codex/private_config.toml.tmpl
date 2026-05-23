@@ -1,16 +1,21 @@
 personality = "pragmatic"
-model = "gpt-5.3-codex"
+model = "gpt-5.4-mini"
 model_reasoning_effort = "medium"
 plan_mode_reasoning_effort = "high"
 
 {{- $path := joinPath .chezmoi.homeDir ".codex/config.toml" -}}
 {{- $secretsPath := joinPath .chezmoi.homeDir ".config/shell/secrets.local" -}}
 {{- $otelToken := "" -}}
+{{- $projects := "" -}}
+{{- $tuiNux := "" -}}
+{{- $migrations := "" -}}
 {{- if stat $secretsPath }}
-{{- $otelToken = trim (output "awk" "/^[[:space:]]*(export[[:space:]]+)?AI_CLI_OTEL_INGEST_TOKEN[[:space:]]*=/ { sub(/^[[:space:]]*(export[[:space:]]+)?AI_CLI_OTEL_INGEST_TOKEN[[:space:]]*=[[:space:]]*/, \"\", $0); gsub(/^[[:space:]]*\\\"|\\\"[[:space:]]*$|^[[:space:]]*'\\''|'\\''[[:space:]]*$/, \"\", $0); print; exit }" $secretsPath) -}}
+{{- $otelToken = trim (output "awk" "/^[[:space:]]*(export[[:space:]]+)?AI_CLI_OTEL_INGEST_TOKEN[[:space:]]*=/ { sub(/^[[:space:]]*(export[[:space:]]+)?AI_CLI_OTEL_INGEST_TOKEN[[:space:]]*=[[:space:]]*/, \"\", $0); sub(/^[[:space:]]*/, \"\", $0); sub(/[[:space:]]*$/, \"\", $0); if ($0 ~ /^\".*\"$/) { $0 = substr($0, 2, length($0) - 2) } else if ($0 ~ /^'.*'$/) { $0 = substr($0, 2, length($0) - 2) } print; exit }" $secretsPath) -}}
 {{- end }}
 {{- if stat $path }}
-{{- $projects := output "awk" "{ if(index($0,\"[projects.\")==1) cap=1; if(cap && substr($0,1,1)==\"[\" && index($0,\"[projects.\")!=1) cap=0; if(cap) print }" $path -}}
+{{- $projects = output "awk" "{ if(index($0,\"[projects.\")==1) cap=1; if(cap && substr($0,1,1)==\"[\" && index($0,\"[projects.\")!=1) cap=0; if(cap) print }" $path -}}
+{{- $tuiNux = output "awk" "{ if(index($0,\"[tui.model_availability_nux]\")==1) cap=1; if(cap && substr($0,1,1)==\"[\" && index($0,\"[tui.model_availability_nux]\")!=1) cap=0; if(cap) print }" $path -}}
+{{- $migrations = output "awk" "{ if(index($0,\"[notice.model_migrations]\")==1) cap=1; if(cap && substr($0,1,1)==\"[\" && index($0,\"[notice.model_migrations]\")!=1) cap=0; if(cap) print }" $path -}}
 {{- if ne (trim $projects) "" }}
 {{ $projects }}
 
@@ -24,10 +29,19 @@ multi_agent = true
 notifications = ["approval-requested"]
 notifications_min_timeout_ms = 0
 theme = "catppuccin-latte"
+status_line = ["model-with-reasoning", "current-dir", "context-usage", "five-hour-limit", "weekly-limit"]
 
+{{- if ne (trim $tuiNux) "" }}
+{{ $tuiNux }}
+
+{{- end }}
 [notice]
 hide_rate_limit_model_nudge = true
 
+{{- if ne (trim $migrations) "" }}
+{{ $migrations }}
+
+{{- end }}
 {{- if ne $otelToken "" }}
 [otel]
 environment = "lab"
@@ -37,9 +51,21 @@ log_user_prompt = false
 otlp-http = { endpoint = "https://otel.apps.k8s.infrastructure.lab.example.com/v1/logs", protocol = "binary", headers = { "Authorization" = "Bearer {{ $otelToken }}" } }
 
 {{- end }}
-{{- if stat $path }}
-{{- $migrations := output "awk" "{ if(index($0,\"[notice.model_migrations]\")==1) cap=1; if(cap && substr($0,1,1)==\"[\" && index($0,\"[notice.model_migrations]\")!=1) cap=0; if(cap) print }" $path -}}
-{{- if ne (trim $migrations) "" }}
-{{ $migrations }}
-{{- end }}
-{{- end }}
+[mcp_servers.chrome-devtools]
+command = "npx"
+args = ["-y", "chrome-devtools-mcp@latest", "--browser-url=http://127.0.0.1:9222", "--no-usage-statistics"]
+
+[mcp_servers.chrome-devtools.tools.new_page]
+approval_mode = "approve"
+
+[mcp_servers.chrome-devtools.tools.take_snapshot]
+approval_mode = "approve"
+
+[mcp_servers.chrome-devtools.tools.get_network_request]
+approval_mode = "approve"
+
+[mcp_servers.chrome-devtools.tools.click]
+approval_mode = "approve"
+
+[mcp_servers.chrome-devtools.tools.navigate_page]
+approval_mode = "approve"

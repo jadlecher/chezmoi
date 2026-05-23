@@ -22,6 +22,7 @@
 
 # Codex: ignore everything by default; manage only explicit allowlist entries
 /.codex/**
+!/.codex
 !/.codex/config.toml
 
 {{- $osrel := lower .chezmoi.kernel.osrelease -}}
