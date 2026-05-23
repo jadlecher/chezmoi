@@ -28,6 +28,16 @@ if [ -f "$HOME/.config/shell/secrets.local" ]; then
   . "$HOME/.config/shell/secrets.local"
 fi
 
+if [ -n "${AI_CLI_OTEL_INGEST_TOKEN:-}" ]; then
+  export CLAUDE_CODE_ENABLE_TELEMETRY=1
+  export OTEL_METRICS_EXPORTER=otlp
+  export OTEL_LOGS_EXPORTER=otlp
+  export OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
+  export OTEL_EXPORTER_OTLP_ENDPOINT=https://otel.apps.k8s.infrastructure.lab.example.com
+  export OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer ${AI_CLI_OTEL_INGEST_TOKEN}"
+  export OTEL_RESOURCE_ATTRIBUTES="service.name=claude-code,deployment.environment=lab,user.name=${USER}"
+fi
+
 # Add user bin to PATH
 export PATH=~/.local/bin:$PATH
 

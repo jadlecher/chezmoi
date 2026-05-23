@@ -46,6 +46,14 @@ chezmoi apply --dry-run --refresh-externals
 - `notifications = ["approval-requested"]` and `notifications_min_timeout_ms = 0` are enforced.
 - This is Linux-generic and not Gentoo-specific; visible desktop popup behavior depends on terminal support for notifications.
 
+## AI CLI telemetry
+
+- AI CLI OTel ingest uses the unmanaged local shell secret `AI_CLI_OTEL_INGEST_TOKEN` in `~/.config/shell/secrets.local`.
+- Claude Code telemetry is configured from `~/.bashrc` and enables OTLP metrics and logs only when that token is set.
+- Codex telemetry is rendered into `~/.codex/config.toml` from the same local token and only enables OTLP log export.
+- The Kubernetes secret fetch command is environment-specific to the lab cluster, but the resulting shell and Codex config are Linux-generic.
+- The literal bearer token is not committed in this repo.
+
 ## Backlight permissions
 
 - `dot_etc/...` in this repo maps to `~/.etc/...`, not system `/etc/...`.
