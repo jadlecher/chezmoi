@@ -17,8 +17,7 @@ plan_mode_reasoning_effort = "high"
 {{- $tuiNux = output "awk" "{ if(index($0,\"[tui.model_availability_nux]\")==1) cap=1; if(cap && substr($0,1,1)==\"[\" && index($0,\"[tui.model_availability_nux]\")!=1) cap=0; if(cap) print }" $path -}}
 {{- $migrations = output "awk" "{ if(index($0,\"[notice.model_migrations]\")==1) cap=1; if(cap && substr($0,1,1)==\"[\" && index($0,\"[notice.model_migrations]\")!=1) cap=0; if(cap) print }" $path -}}
 {{- if ne (trim $projects) "" }}
-{{ $projects }}
-
+{{ trim $projects }}
 {{- end }}
 {{- end }}
 [features]
@@ -32,15 +31,13 @@ theme = "catppuccin-latte"
 status_line = ["model-with-reasoning", "current-dir", "context-usage", "five-hour-limit", "weekly-limit"]
 
 {{- if ne (trim $tuiNux) "" }}
-{{ $tuiNux }}
-
+{{ trim $tuiNux }}
 {{- end }}
 [notice]
 hide_rate_limit_model_nudge = true
 
 {{- if ne (trim $migrations) "" }}
-{{ $migrations }}
-
+{{ trim $migrations }}
 {{- end }}
 {{- if ne $otelToken "" }}
 [otel]
