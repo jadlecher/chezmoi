@@ -1,9 +1,13 @@
 {
   "env": {
     "BASH_DEFAULT_TIMEOUT_MS": "300000",
-    "BASH_MAX_TIMEOUT_MS": "1800000"
+    "BASH_MAX_TIMEOUT_MS": "1800000",
+    "OTEL_EXPORTER_OTLP_ENDPOINT": "https://otel.apps.k8s.infrastructure.lab.example.com"
   },
   "includeCoAuthoredBy": false,
+  "permissions": {
+    "defaultMode": "auto"
+  },
   "hooks": {
     "Notification": [
       {
@@ -19,7 +23,7 @@
   },
   "statusLine": {
     "type": "command",
-    "command": "bash /home/james/.claude/statusline-command.sh"
+    "command": "python3 /home/james/.claude/rate-limit-exporter.py"
   },
   "enabledPlugins": {
     "pyright-lsp@claude-plugins-official": true
@@ -27,8 +31,5 @@
   "effortLevel": "medium",
   "skipDangerousModePermissionPrompt": true,
   "theme": "light",
-  "skipAutoPermissionPrompt": true,
-  "permissions": {
-    "defaultMode": "auto"
-  }
+  "skipAutoPermissionPrompt": true
 }

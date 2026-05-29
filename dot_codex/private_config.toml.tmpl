@@ -1,17 +1,12 @@
 personality = "pragmatic"
-model = "gpt-5.4-mini"
+model = "gpt-5.3-codex"
 model_reasoning_effort = "medium"
 plan_mode_reasoning_effort = "high"
 
 {{- $path := joinPath .chezmoi.homeDir ".codex/config.toml" -}}
-{{- $secretsPath := joinPath .chezmoi.homeDir ".config/shell/secrets.local" -}}
-{{- $otelToken := "" -}}
 {{- $projects := "" -}}
 {{- $tuiNux := "" -}}
 {{- $migrations := "" -}}
-{{- if stat $secretsPath }}
-{{- $otelToken = trim (output "awk" "/^[[:space:]]*(export[[:space:]]+)?AI_CLI_OTEL_INGEST_TOKEN[[:space:]]*=/ { sub(/^[[:space:]]*(export[[:space:]]+)?AI_CLI_OTEL_INGEST_TOKEN[[:space:]]*=[[:space:]]*/, \"\", $0); sub(/^[[:space:]]*/, \"\", $0); sub(/[[:space:]]*$/, \"\", $0); if ($0 ~ /^\".*\"$/) { $0 = substr($0, 2, length($0) - 2) } else if ($0 ~ /^'.*'$/) { $0 = substr($0, 2, length($0) - 2) } print; exit }" $secretsPath) -}}
-{{- end }}
 {{- if stat $path }}
 {{- $projects = output "awk" "{ if(index($0,\"[projects.\")==1) cap=1; if(cap && substr($0,1,1)==\"[\" && index($0,\"[projects.\")!=1) cap=0; if(cap) print }" $path -}}
 {{- $tuiNux = output "awk" "{ if(index($0,\"[tui.model_availability_nux]\")==1) cap=1; if(cap && substr($0,1,1)==\"[\" && index($0,\"[tui.model_availability_nux]\")!=1) cap=0; if(cap) print }" $path -}}
@@ -39,15 +34,12 @@ hide_rate_limit_model_nudge = true
 {{- if ne (trim $migrations) "" }}
 {{ trim $migrations }}
 {{- end }}
-{{- if ne $otelToken "" }}
 [otel]
 environment = "lab"
 log_user_prompt = false
 
 [otel.exporter]
-otlp-http = { endpoint = "https://otel.apps.k8s.infrastructure.lab.example.com/v1/logs", protocol = "binary", headers = { "Authorization" = "Bearer {{ $otelToken }}" } }
-
-{{- end }}
+otlp-http = { endpoint = "https://otel.apps.k8s.infrastructure.lab.example.com/v1/logs", protocol = "binary" }
 [mcp_servers.chrome-devtools]
 command = "npx"
 args = ["-y", "chrome-devtools-mcp@latest", "--browser-url=http://127.0.0.1:9222", "--no-usage-statistics"]
@@ -65,4 +57,10 @@ approval_mode = "approve"
 approval_mode = "approve"
 
 [mcp_servers.chrome-devtools.tools.navigate_page]
+approval_mode = "approve"
+
+[mcp_servers.chrome-devtools.tools.evaluate_script]
+approval_mode = "approve"
+
+[mcp_servers.chrome-devtools.tools.handle_dialog]
 approval_mode = "approve"
