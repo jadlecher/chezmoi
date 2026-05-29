@@ -1,0 +1,21 @@
+{
+  "name": "codex-rate-limit-exporter",
+  "version": "0.1.0",
+  "description": "Export last-observed Codex quota state to the existing OTel gateway.",
+  "author": {
+    "name": "James"
+  },
+  "interface": {
+    "displayName": "Codex Rate Limit Exporter",
+    "shortDescription": "Exports Codex quota snapshots via plugin hooks.",
+    "longDescription": "Reads the latest Codex session token_count event, extracts the 5-hour and 7-day quota windows, and exports that snapshot to the existing OTel gateway without running a daemon.",
+    "developerName": "James",
+    "category": "Developer Tools",
+    "capabilities": [
+      "Automation"
+    ],
+    "defaultPrompt": [
+      "Use the local Codex quota exporter hooks when this plugin is enabled."
+    ]
+  }
+}

@@ -2,3 +2,14 @@
 *
 !.gitignore
 !private_config.toml.tmpl
+!rate-limit-marketplace/
+!rate-limit-marketplace/.agents/
+!rate-limit-marketplace/.agents/plugins/
+!rate-limit-marketplace/.agents/plugins/marketplace.json
+!rate-limit-marketplace/plugins/
+!rate-limit-marketplace/plugins/codex-rate-limit-exporter/
+!rate-limit-marketplace/plugins/codex-rate-limit-exporter/.codex-plugin/
+!rate-limit-marketplace/plugins/codex-rate-limit-exporter/.codex-plugin/plugin.json
+!rate-limit-marketplace/plugins/codex-rate-limit-exporter/hooks.json
+!rate-limit-marketplace/plugins/codex-rate-limit-exporter/scripts/
+!rate-limit-marketplace/plugins/codex-rate-limit-exporter/scripts/executable_export-rate-limits.py

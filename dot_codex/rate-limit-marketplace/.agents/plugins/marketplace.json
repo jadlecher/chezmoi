@@ -1,0 +1,20 @@
+{
+  "name": "personal-codex-hooks",
+  "interface": {
+    "displayName": "Personal Codex Hooks"
+  },
+  "plugins": [
+    {
+      "name": "codex-rate-limit-exporter",
+      "source": {
+        "source": "local",
+        "path": "./plugins/codex-rate-limit-exporter"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Developer Tools"
+    }
+  ]
+}

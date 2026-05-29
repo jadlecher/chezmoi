@@ -1,5 +1,5 @@
 personality = "pragmatic"
-model = "gpt-5.3-codex"
+model = "gpt-5.4"
 model_reasoning_effort = "medium"
 plan_mode_reasoning_effort = "high"
 
@@ -39,7 +39,16 @@ environment = "lab"
 log_user_prompt = false
 
 [otel.exporter]
-otlp-http = { endpoint = "https://otel.apps.k8s.infrastructure.lab.example.com/v1/logs", protocol = "binary" }
+{{ $ingestToken := env "AI_CLI_OTEL_INGEST_TOKEN" }}
+otlp-http = { endpoint = "https://otel.apps.k8s.infrastructure.lab.example.com", protocol = "binary"{{ if ne $ingestToken "" }}, headers = { "Authorization" = "Bearer {{ $ingestToken }}" }{{ end }} }
+
+[marketplaces.personal-codex-hooks]
+source_type = "local"
+source = "{{ joinPath .chezmoi.homeDir ".codex/rate-limit-marketplace" }}"
+
+[plugins."codex-rate-limit-exporter@personal-codex-hooks"]
+enabled = true
+
 [mcp_servers.chrome-devtools]
 command = "npx"
 args = ["-y", "chrome-devtools-mcp@latest", "--browser-url=http://127.0.0.1:9222", "--no-usage-statistics"]
