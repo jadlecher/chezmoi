@@ -8,7 +8,6 @@ import glob
 import json
 import os
 import socket
-import subprocess
 import sys
 import tempfile
 import time
@@ -164,7 +163,6 @@ def _root_attrs(plan_type: str, source_user: str, limit_id: str) -> list[dict[st
 
 def _build_metrics(snapshot: Snapshot) -> dict[str, Any]:
     now = time.time()
-    observed_ns = str(int(snapshot.observed_at * 1e9))
     now_ns = str(int(now * 1e9))
     source_user = os.environ.get("USER", "unknown")
     windows = [("5h", snapshot.primary), ("7d", snapshot.secondary)]
@@ -174,11 +172,11 @@ def _build_metrics(snapshot: Snapshot) -> dict[str, Any]:
     reached_points = []
     for window_name, window in windows:
         attrs = _window_attrs(window_name, snapshot.plan_type, source_user, snapshot.limit_id)
-        used_points.append(_metric_point(observed_ns, float(window["used_percent"]), attrs))
-        reset_points.append(_metric_point(observed_ns, float(window["resets_at"]), attrs))
+        used_points.append(_metric_point(now_ns, float(window["used_percent"]), attrs))
+        reset_points.append(_metric_point(now_ns, float(window["resets_at"]), attrs))
         reached_points.append(
             _metric_point(
-                observed_ns,
+                now_ns,
                 1.0 if snapshot.rate_limit_reached_type == window_name else 0.0,
                 attrs,
             )
@@ -202,7 +200,7 @@ def _build_metrics(snapshot: Snapshot) -> dict[str, Any]:
             "name": "codex_cli_rate_limit_snapshot_timestamp_seconds",
             "description": "Unix epoch of the latest observed Codex quota snapshot.",
             "unit": "s",
-            "gauge": {"dataPoints": [_metric_point(observed_ns, snapshot.observed_at, common_attrs)]},
+            "gauge": {"dataPoints": [_metric_point(now_ns, snapshot.observed_at, common_attrs)]},
         },
         {
             "name": "codex_cli_rate_limit_export_timestamp_seconds",
@@ -420,33 +418,74 @@ def _find_snapshots_since(state: dict[str, Any]) -> list[Snapshot]:
     return snapshots
 
 
-def _spawn_worker(raw_hook_input: bytes) -> None:
-    tmp_fd, tmp_name = tempfile.mkstemp(prefix="codex-rate-limit-hook-", suffix=".json")
-    with os.fdopen(tmp_fd, "wb") as handle:
-        handle.write(raw_hook_input)
-    with DEFAULT_LOG_FILE.open("a", encoding="utf-8") as stderr_handle:
-        subprocess.Popen(
-            [sys.executable, str(SCRIPT_PATH), "--export-worker", tmp_name],
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.DEVNULL,
-            stderr=stderr_handle,
-            close_fds=True,
-            start_new_session=True,
-        )
+def _hook_event_name(hook_payload: dict[str, Any]) -> str:
+    return str(hook_payload.get("event_name") or hook_payload.get("event") or "unknown")
+
+
+def _parse_hook_payload(raw_hook_input: bytes) -> dict[str, Any]:
+    if not raw_hook_input.strip():
+        return {}
+    try:
+        decoded = json.loads(raw_hook_input.decode("utf-8"))
+    except Exception as exc:  # noqa: BLE001
+        _post_log("ERROR", "codex hook input parse error", {"error": exc})
+        return {}
+    if isinstance(decoded, dict):
+        return decoded
+    _post_log("WARN", "codex hook input was not an object", {"type": type(decoded).__name__})
+    return {}
 
 
 def _run_locked_exports(hook_payload: dict[str, Any]) -> int:
+    event_name = _hook_event_name(hook_payload)
+    _post_log("INFO", "codex quota hook started", {"hook_event": event_name})
     DEFAULT_LOCK_PATH.parent.mkdir(parents=True, exist_ok=True)
     with DEFAULT_LOCK_PATH.open("a+", encoding="utf-8") as lock_handle:
         fcntl.flock(lock_handle.fileno(), fcntl.LOCK_EX)
         state = _read_state()
         snapshots = _find_snapshots_since(state)
         if not snapshots:
+            _post_log("INFO", "codex quota export no-op", {"hook_event": event_name})
             return 0
+        if len(snapshots) > 1:
+            _post_log(
+                "WARN",
+                "codex quota export replaying backlog",
+                {"backlog_length": len(snapshots), "event_name": event_name},
+            )
 
         endpoint, headers = _load_endpoint_and_headers()
         for snapshot in snapshots:
-            _post_json(f"{endpoint}/v1/metrics", _build_metrics(snapshot), headers)
+            try:
+                _post_json(f"{endpoint}/v1/metrics", _build_metrics(snapshot), headers)
+            except urllib.error.HTTPError as exc:
+                body = exc.read(500).decode("utf-8", errors="replace")
+                _post_log(
+                    "ERROR",
+                    "codex quota export failed",
+                    {
+                        "status": exc.code,
+                        "error": body or str(exc),
+                        "identity": snapshot.identity,
+                        "observed_at": snapshot.observed_at,
+                        "limit_id": snapshot.limit_id,
+                        "session_path": snapshot.session_path,
+                    },
+                )
+                return 1
+            except Exception as exc:  # noqa: BLE001
+                _post_log(
+                    "ERROR",
+                    "codex quota export failed",
+                    {
+                        "error": str(exc),
+                        "identity": snapshot.identity,
+                        "observed_at": snapshot.observed_at,
+                        "limit_id": snapshot.limit_id,
+                        "session_path": snapshot.session_path,
+                    },
+                )
+                return 1
             _write_state(snapshot)
             _post_log(
                 "INFO",
@@ -454,7 +493,7 @@ def _run_locked_exports(hook_payload: dict[str, Any]) -> int:
                 {
                     "session_path": snapshot.session_path,
                     "identity": snapshot.identity,
-                    "hook_event": hook_payload.get("event_name") or hook_payload.get("event") or "unknown",
+                    "hook_event": event_name,
                     "plan_type": snapshot.plan_type,
                     "limit_id": snapshot.limit_id,
                     "observed_at": snapshot.observed_at,
@@ -467,45 +506,18 @@ def _run_locked_exports(hook_payload: dict[str, Any]) -> int:
     return 0
 
 
-def run_export_worker(path: str) -> int:
-    raw_hook_input = b"{}"
-    try:
-        raw_hook_input = Path(path).read_bytes()
-    finally:
-        try:
-            os.unlink(path)
-        except FileNotFoundError:
-            pass
-
-    hook_payload = {}
-    if raw_hook_input.strip():
-        try:
-            hook_payload = json.loads(raw_hook_input.decode("utf-8"))
-        except Exception as exc:  # noqa: BLE001
-            _post_log("ERROR", "codex hook input parse error", {"error": exc})
-
-    return _run_locked_exports(hook_payload)
-
-
 def main() -> int:
-    if len(sys.argv) == 3 and sys.argv[1] == "--export-worker":
-        try:
-            return run_export_worker(sys.argv[2])
-        except urllib.error.HTTPError as exc:
-            body = exc.read(200).decode("utf-8", errors="replace")
-            _post_log("ERROR", "codex quota export HTTP error", {"status": exc.code, "body": body})
-            return 1
-        except Exception as exc:  # noqa: BLE001
-            _post_log("ERROR", "codex quota export error", {"error": exc})
-            return 1
-
     raw_hook_input = sys.stdin.buffer.read()
+    hook_payload = _parse_hook_payload(raw_hook_input)
     try:
-        _spawn_worker(raw_hook_input)
-    except Exception as exc:  # noqa: BLE001
-        _post_log("ERROR", "failed to spawn Codex quota export worker", {"error": exc})
+        return _run_locked_exports(hook_payload)
+    except urllib.error.HTTPError as exc:
+        body = exc.read(200).decode("utf-8", errors="replace")
+        _post_log("ERROR", "codex quota export HTTP error", {"status": exc.code, "body": body})
         return 1
-    return 0
+    except Exception as exc:  # noqa: BLE001
+        _post_log("ERROR", "codex quota export error", {"error": exc})
+        return 1
 
 
 if __name__ == "__main__":

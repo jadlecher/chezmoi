@@ -1,6 +1,6 @@
 {
   "name": "codex-rate-limit-exporter",
-  "version": "0.1.0",
+  "version": "0.1.0+codex.local-20260530-011917",
   "description": "Export last-observed Codex quota state to the existing OTel gateway.",
   "author": {
     "name": "James"
