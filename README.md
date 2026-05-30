@@ -52,6 +52,7 @@ chezmoi apply --dry-run --refresh-externals
 - Claude Code telemetry is configured from `~/.bashrc` and enables OTLP metrics and logs only when that token is set.
 - Codex telemetry is rendered into `~/.codex/config.toml` from the same local token and only enables OTLP log export.
 - Codex quota metrics are activated through `~/.codex/hooks.json`; the managed local plugin packages the exporter and is reinstalled after managed Codex files are written when the plugin bundle changes during `chezmoi apply`.
+- The exporter can run mid-turn from `PostToolUse`, throttled to at most once per minute per Codex session. `Stop`, `StopFailure`, and `SubagentStop` bypass that throttle and flush immediately.
 - That plugin reinstall verifies the installed cache version against the rendered live manifest, retries with a remove/re-add when Codex keeps a stale cache, and remains best-effort so top-level hooks stay the active runtime path if Codex is unavailable or still stale.
 - The Kubernetes secret fetch command is environment-specific to the lab cluster, but the resulting shell and Codex config are Linux-generic.
 - The literal bearer token is not committed in this repo.

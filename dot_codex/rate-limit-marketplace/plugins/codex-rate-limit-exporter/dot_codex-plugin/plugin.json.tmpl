@@ -18,7 +18,7 @@
   "interface": {
     "displayName": "Codex Rate Limit Exporter",
     "shortDescription": "Exports Codex quota snapshots via plugin hooks.",
-    "longDescription": "Reads Codex session token_count events, exports the 5-hour and 7-day quota windows to the existing OTel gateway, and uses a short-lived plugin-owned background refresher during long sessions.",
+    "longDescription": "Reads Codex session token_count events and exports the 5-hour and 7-day quota windows to the existing OTel gateway. PostToolUse can export mid-turn at most once per minute per session, while Stop, StopFailure, and SubagentStop flush immediately.",
     "developerName": "James",
     "category": "Developer Tools",
     "capabilities": [

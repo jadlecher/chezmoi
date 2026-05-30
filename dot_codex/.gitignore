@@ -14,3 +14,4 @@
 !rate-limit-marketplace/plugins/codex-rate-limit-exporter/hooks.json
 !rate-limit-marketplace/plugins/codex-rate-limit-exporter/scripts/
 !rate-limit-marketplace/plugins/codex-rate-limit-exporter/scripts/executable_export-rate-limits.py
+!rate-limit-marketplace/plugins/codex-rate-limit-exporter/scripts/test_export_rate_limits.py
