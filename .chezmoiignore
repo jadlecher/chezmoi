@@ -1,0 +1,9 @@
+# Codex writes runtime state, caches, sessions, auth, and sandbox temp files
+# into ~/.codex. None of it should be chezmoi-managed (it also contains secrets
+# in auth.json and leaves dangling symlinks under tmp/ that break source reads).
+# Keep only the explicitly authored config/plugin files under .codex.
+.codex/*
+!.codex/config.toml
+!.codex/hooks.json
+!.codex/rate-limit-marketplace
+.codex/rate-limit-marketplace/**/__pycache__

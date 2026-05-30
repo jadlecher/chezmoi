@@ -6,6 +6,8 @@
 # graphical session is started inside dbus-run-session. We keep the wrapper and
 # primary desktop entry in the user's home, then mirror the session entry into
 # /usr/local/share/wayland-sessions so greetd/regreet can reliably see it.
+#
+# Chezmoi trigger marker: {{ include "dot_local/share/wayland-sessions/hyprland-dbus.desktop" | sha256sum }}
 set -eu
 
 SOURCE_DESKTOP="${HOME}/.local/share/wayland-sessions/hyprland-dbus.desktop"

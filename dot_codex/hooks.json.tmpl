@@ -1,0 +1,45 @@
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "{{ .chezmoi.homeDir }}/.codex/rate-limit-marketplace/plugins/codex-rate-limit-exporter/scripts/export-rate-limits.py"
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "{{ .chezmoi.homeDir }}/.codex/rate-limit-marketplace/plugins/codex-rate-limit-exporter/scripts/export-rate-limits.py"
+          }
+        ]
+      }
+    ],
+    "StopFailure": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "{{ .chezmoi.homeDir }}/.codex/rate-limit-marketplace/plugins/codex-rate-limit-exporter/scripts/export-rate-limits.py"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "{{ .chezmoi.homeDir }}/.codex/rate-limit-marketplace/plugins/codex-rate-limit-exporter/scripts/export-rate-limits.py"
+          }
+        ]
+      }
+    ]
+  }
+}

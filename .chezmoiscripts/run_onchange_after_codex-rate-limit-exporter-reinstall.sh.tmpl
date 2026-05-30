@@ -1,0 +1,111 @@
+{{- $sourceDir := .chezmoi.sourceDir -}}
+{{- $manifestSource := joinPath $sourceDir "dot_codex/rate-limit-marketplace/plugins/codex-rate-limit-exporter/dot_codex-plugin/plugin.json.tmpl" -}}
+{{- $pluginHooksSource := joinPath $sourceDir "dot_codex/rate-limit-marketplace/plugins/codex-rate-limit-exporter/hooks.json" -}}
+{{- $scriptSource := joinPath $sourceDir "dot_codex/rate-limit-marketplace/plugins/codex-rate-limit-exporter/scripts/executable_export-rate-limits.py" -}}
+{{- $marketplaceSource := joinPath $sourceDir "dot_codex/rate-limit-marketplace/dot_agents/plugins/marketplace.json" -}}
+{{- $manifestHash := index (splitList " " (output "sha256sum" $manifestSource)) 0 -}}
+{{- $pluginHooksHash := index (splitList " " (output "sha256sum" $pluginHooksSource)) 0 -}}
+{{- $scriptHash := index (splitList " " (output "sha256sum" $scriptSource)) 0 -}}
+{{- $marketplaceHash := index (splitList " " (output "sha256sum" $marketplaceSource)) 0 -}}
+{{- $bundleHash := printf "%.12s" (sha256sum (printf "%s\n%s\n%s\n%s\n" $manifestHash $pluginHooksHash $scriptHash $marketplaceHash)) -}}
+#!/bin/sh
+# Reinstall the local Codex plugin after managed files are written so Codex's
+# plugin cache tracks the chezmoi-managed live bundle.
+#
+# Chezmoi trigger marker: {{ $bundleHash }}
+set -eu
+
+plugin_name="codex-rate-limit-exporter"
+marketplace_path="${HOME}/.codex/rate-limit-marketplace/.agents/plugins/marketplace.json"
+manifest_path="${HOME}/.codex/rate-limit-marketplace/plugins/codex-rate-limit-exporter/.codex-plugin/plugin.json"
+codex_bin=""
+
+warn() {
+    echo "warning: $*" >&2
+}
+
+if command -v codex >/dev/null 2>&1; then
+    codex_bin="$(command -v codex)"
+elif [ -x "${HOME}/.npm-global/bin/codex" ]; then
+    codex_bin="${HOME}/.npm-global/bin/codex"
+fi
+
+if [ -z "$codex_bin" ]; then
+    warn "codex not found; skipping ${plugin_name} reinstall"
+    exit 0
+fi
+
+if [ ! -f "$marketplace_path" ]; then
+    warn "missing Codex marketplace file at ${marketplace_path}; skipping ${plugin_name} reinstall"
+    exit 0
+fi
+
+if [ ! -f "$manifest_path" ]; then
+    warn "missing rendered plugin manifest at ${manifest_path}; skipping ${plugin_name} reinstall"
+    exit 0
+fi
+
+marketplace_name="$(python3 - "$marketplace_path" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+payload = json.loads(path.read_text(encoding="utf-8"))
+name = payload.get("name")
+if not isinstance(name, str) or not name.strip():
+    raise SystemExit("invalid marketplace name")
+print(name.strip())
+PY
+)" || {
+    warn "unable to read Codex marketplace name from ${marketplace_path}; skipping ${plugin_name} reinstall"
+    exit 0
+}
+
+desired_version="$(python3 - "$manifest_path" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+payload = json.loads(path.read_text(encoding="utf-8"))
+version = payload.get("version")
+if not isinstance(version, str) or not version.strip():
+    raise SystemExit("invalid plugin version")
+print(version.strip())
+PY
+)" || {
+    warn "unable to read rendered plugin version from ${manifest_path}; skipping ${plugin_name} reinstall"
+    exit 0
+}
+
+cache_dir="${HOME}/.codex/plugins/cache/${marketplace_name}/${plugin_name}/${desired_version}"
+plugin_ref="${plugin_name}@${marketplace_name}"
+
+has_desired_version() {
+    [ -d "$cache_dir" ]
+}
+
+if ! "$codex_bin" plugin add "$plugin_ref"; then
+    warn "failed to install ${plugin_ref}; existing top-level hooks remain active"
+    exit 0
+fi
+
+if ! has_desired_version; then
+    warn "Codex did not stage ${plugin_ref} at ${desired_version}; retrying with remove/re-add"
+    if ! "$codex_bin" plugin remove "$plugin_ref"; then
+        warn "failed to remove stale ${plugin_ref}; existing top-level hooks remain active"
+        exit 0
+    fi
+    if ! "$codex_bin" plugin add "$plugin_ref"; then
+        warn "failed to reinstall ${plugin_ref} after removal; existing top-level hooks remain active"
+        exit 0
+    fi
+fi
+
+if ! has_desired_version; then
+    warn "Codex still does not have ${plugin_ref} cached at ${desired_version}; existing top-level hooks remain active"
+    exit 0
+fi
+
+echo "info: reinstalled ${plugin_ref} at ${desired_version}; start a new Codex thread to pick up updated plugin state" >&2

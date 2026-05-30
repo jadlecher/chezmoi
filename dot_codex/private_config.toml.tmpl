@@ -7,10 +7,12 @@ plan_mode_reasoning_effort = "high"
 {{- $projects := "" -}}
 {{- $tuiNux := "" -}}
 {{- $migrations := "" -}}
+{{- $hooksState := "" -}}
 {{- if stat $path }}
 {{- $projects = output "awk" "{ if(index($0,\"[projects.\")==1) cap=1; if(cap && substr($0,1,1)==\"[\" && index($0,\"[projects.\")!=1) cap=0; if(cap) print }" $path -}}
 {{- $tuiNux = output "awk" "{ if(index($0,\"[tui.model_availability_nux]\")==1) cap=1; if(cap && substr($0,1,1)==\"[\" && index($0,\"[tui.model_availability_nux]\")!=1) cap=0; if(cap) print }" $path -}}
 {{- $migrations = output "awk" "{ if(index($0,\"[notice.model_migrations]\")==1) cap=1; if(cap && substr($0,1,1)==\"[\" && index($0,\"[notice.model_migrations]\")!=1) cap=0; if(cap) print }" $path -}}
+{{- $hooksState = output "awk" "{ if(index($0,\"[hooks.state]\")==1) cap=1; if(cap) print }" $path -}}
 {{- if ne (trim $projects) "" }}
 {{ trim $projects }}
 {{- end }}
@@ -18,6 +20,7 @@ plan_mode_reasoning_effort = "high"
 [features]
 use_linux_sandbox_bwrap = true
 multi_agent = true
+hooks = true
 
 [tui]
 notifications = ["approval-requested"]
@@ -40,7 +43,7 @@ log_user_prompt = false
 
 [otel.exporter]
 {{ $ingestToken := env "AI_CLI_OTEL_INGEST_TOKEN" }}
-otlp-http = { endpoint = "https://otel.apps.k8s.infrastructure.lab.example.com", protocol = "binary"{{ if ne $ingestToken "" }}, headers = { "Authorization" = "Bearer {{ $ingestToken }}" }{{ end }} }
+otlp-http = { endpoint = "https://otel.apps.k8s.infrastructure.lab.example.com/v1/logs", protocol = "binary"{{ if ne $ingestToken "" }}, headers = { "Authorization" = "Bearer {{ $ingestToken }}" }{{ end }} }
 
 [marketplaces.personal-codex-hooks]
 source_type = "local"
@@ -73,3 +76,8 @@ approval_mode = "approve"
 
 [mcp_servers.chrome-devtools.tools.handle_dialog]
 approval_mode = "approve"
+
+{{- if ne (trim $hooksState) "" }}
+
+{{ trim $hooksState }}
+{{- end }}

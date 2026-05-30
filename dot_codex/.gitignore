@@ -2,6 +2,7 @@
 *
 !.gitignore
 !private_config.toml.tmpl
+!hooks.json.tmpl
 !rate-limit-marketplace/
 !rate-limit-marketplace/dot_agents/
 !rate-limit-marketplace/dot_agents/plugins/
@@ -9,7 +10,7 @@
 !rate-limit-marketplace/plugins/
 !rate-limit-marketplace/plugins/codex-rate-limit-exporter/
 !rate-limit-marketplace/plugins/codex-rate-limit-exporter/dot_codex-plugin/
-!rate-limit-marketplace/plugins/codex-rate-limit-exporter/dot_codex-plugin/plugin.json
+!rate-limit-marketplace/plugins/codex-rate-limit-exporter/dot_codex-plugin/plugin.json.tmpl
 !rate-limit-marketplace/plugins/codex-rate-limit-exporter/hooks.json
 !rate-limit-marketplace/plugins/codex-rate-limit-exporter/scripts/
 !rate-limit-marketplace/plugins/codex-rate-limit-exporter/scripts/executable_export-rate-limits.py

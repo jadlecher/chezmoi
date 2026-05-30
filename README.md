@@ -51,6 +51,8 @@ chezmoi apply --dry-run --refresh-externals
 - AI CLI OTel ingest uses the unmanaged local shell secret `AI_CLI_OTEL_INGEST_TOKEN` in `~/.config/shell/secrets.local`.
 - Claude Code telemetry is configured from `~/.bashrc` and enables OTLP metrics and logs only when that token is set.
 - Codex telemetry is rendered into `~/.codex/config.toml` from the same local token and only enables OTLP log export.
+- Codex quota metrics are activated through `~/.codex/hooks.json`; the managed local plugin packages the exporter and is reinstalled after managed Codex files are written when the plugin bundle changes during `chezmoi apply`.
+- That plugin reinstall verifies the installed cache version against the rendered live manifest, retries with a remove/re-add when Codex keeps a stale cache, and remains best-effort so top-level hooks stay the active runtime path if Codex is unavailable or still stale.
 - The Kubernetes secret fetch command is environment-specific to the lab cluster, but the resulting shell and Codex config are Linux-generic.
 - The literal bearer token is not committed in this repo.
 
@@ -82,7 +84,7 @@ chezmoi apply --dry-run --refresh-externals
 - `~/.local/bin/start-hyprland-dbus` wraps `/usr/bin/start-hyprland` in `dbus-run-session`.
 - `~/.local/share/wayland-sessions/hyprland-dbus.desktop` provides a session entry that launches Hyprland with an inherited `DBUS_SESSION_BUS_ADDRESS`.
 - This is Linux-generic and avoids patching packaged session files under `/usr/share`.
-- `run_always_fix-hyprland-session-dbus.sh` mirrors that desktop entry into `/usr/local/share/wayland-sessions/` so `greetd`/`regreet` can see it without modifying package-owned files.
+- `run_onchange_after_fix-hyprland-session-dbus.sh.tmpl` mirrors that desktop entry into `/usr/local/share/wayland-sessions/` so `greetd`/`regreet` can see it without modifying package-owned files, and only re-runs when the source desktop entry changes.
 - Gentoo caveat: this repo uses `sudo install` into `/usr/local/share/wayland-sessions/`, which is Gentoo-safe and Linux-generic, but still depends on local privilege policy during `chezmoi apply`.
 
 ## Kvantum Catppuccin themes (Qt apps, including wpa_gui)

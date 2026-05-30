@@ -1,0 +1,31 @@
+{{- $sourceDir := .chezmoi.sourceDir -}}
+{{- $manifestSource := joinPath $sourceDir "dot_codex/rate-limit-marketplace/plugins/codex-rate-limit-exporter/dot_codex-plugin/plugin.json.tmpl" -}}
+{{- $pluginHooksSource := joinPath $sourceDir "dot_codex/rate-limit-marketplace/plugins/codex-rate-limit-exporter/hooks.json" -}}
+{{- $scriptSource := joinPath $sourceDir "dot_codex/rate-limit-marketplace/plugins/codex-rate-limit-exporter/scripts/executable_export-rate-limits.py" -}}
+{{- $marketplaceSource := joinPath $sourceDir "dot_codex/rate-limit-marketplace/dot_agents/plugins/marketplace.json" -}}
+{{- $manifestHash := index (splitList " " (output "sha256sum" $manifestSource)) 0 -}}
+{{- $pluginHooksHash := index (splitList " " (output "sha256sum" $pluginHooksSource)) 0 -}}
+{{- $scriptHash := index (splitList " " (output "sha256sum" $scriptSource)) 0 -}}
+{{- $marketplaceHash := index (splitList " " (output "sha256sum" $marketplaceSource)) 0 -}}
+{{- $bundleHash := printf "%.12s" (sha256sum (printf "%s\n%s\n%s\n%s\n" $manifestHash $pluginHooksHash $scriptHash $marketplaceHash)) -}}
+{
+  "name": "codex-rate-limit-exporter",
+  "version": "0.2.0+codex.{{ $bundleHash }}",
+  "description": "Export last-observed Codex quota state to the existing OTel gateway.",
+  "author": {
+    "name": "James"
+  },
+  "interface": {
+    "displayName": "Codex Rate Limit Exporter",
+    "shortDescription": "Exports Codex quota snapshots via plugin hooks.",
+    "longDescription": "Reads Codex session token_count events, exports the 5-hour and 7-day quota windows to the existing OTel gateway, and uses a short-lived plugin-owned background refresher during long sessions.",
+    "developerName": "James",
+    "category": "Developer Tools",
+    "capabilities": [
+      "Automation"
+    ],
+    "defaultPrompt": [
+      "Use the local Codex quota exporter hooks when this plugin is enabled."
+    ]
+  }
+}
