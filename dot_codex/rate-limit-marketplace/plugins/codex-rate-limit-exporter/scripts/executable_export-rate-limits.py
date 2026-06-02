@@ -8,6 +8,7 @@ import glob
 import json
 import os
 import socket
+import subprocess
 import sys
 import tempfile
 import time
@@ -19,15 +20,21 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+SCRIPT_PATH = Path(__file__).resolve()
 DEFAULT_CONFIG_PATH = Path.home() / ".codex" / "config.toml"
 DEFAULT_STATE_PATH = Path.home() / ".codex" / "codex-rate-limit-exporter-state.json"
-DEFAULT_EXPORT_LOCK_PATH = Path.home() / ".codex" / "codex-rate-limit-exporter-state.lock"
+DEFAULT_STATE_LOCK_PATH = Path.home() / ".codex" / "codex-rate-limit-exporter-state.lock"
+DEFAULT_EXPORT_LOCK_PATH = Path.home() / ".codex" / "codex-rate-limit-exporter-export.lock"
 DEFAULT_LOG_FILE = Path.home() / ".codex" / "log" / "codex-rate-limit-exporter.log"
 DEFAULT_SERVICE_NAME = "codex-rate-limit-plugin"
 DEFAULT_TIMEOUT_SECONDS = 5
+FLUSH_TIMEOUT_SECONDS = 2
 METRIC_LOOKBACK_SECONDS = 30 * 24 * 60 * 60
-POST_TOOL_USE_THROTTLE_SECONDS = 60
-POST_TOOL_USE_STATE_KEY = "post_tool_use"
+ACTIVE_DEBOUNCE_SECONDS = 10
+WORKER_IDLE_SECONDS = 20
+WORKER_START_GRACE_SECONDS = 5
+WORKER_POLL_SECONDS = 1
+SESSION_CURSOR_STATE_KEY = "session_cursors"
 PREFERRED_LIMIT_ID = "codex"
 
 
@@ -111,7 +118,7 @@ def _load_endpoint_and_headers() -> tuple[str, dict[str, str]]:
     return endpoint, headers
 
 
-def _post_json(url: str, payload: dict[str, Any], headers: dict[str, str]) -> None:
+def _post_json(url: str, payload: dict[str, Any], headers: dict[str, str], *, timeout: int = DEFAULT_TIMEOUT_SECONDS) -> None:
     body = json.dumps(payload).encode("utf-8")
     request = urllib.request.Request(
         url,
@@ -119,7 +126,7 @@ def _post_json(url: str, payload: dict[str, Any], headers: dict[str, str]) -> No
         headers={"Content-Type": "application/json", **headers},
         method="POST",
     )
-    with urllib.request.urlopen(request, timeout=DEFAULT_TIMEOUT_SECONDS) as response:
+    with urllib.request.urlopen(request, timeout=timeout) as response:
         if response.status >= 300:
             raise RuntimeError(f"unexpected HTTP status {response.status} from {url}")
 
@@ -272,6 +279,8 @@ def _build_log_payload(level: str, message: str, attrs: dict[str, Any] | None = 
 
 def _post_log(level: str, message: str, attrs: dict[str, Any] | None = None) -> None:
     _log_local(f"{level.lower()}: {message}")
+    if level == "INFO":
+        return
     try:
         endpoint, headers = _load_endpoint_and_headers()
         _post_json(f"{endpoint}/v1/logs", _build_log_payload(level, message, attrs), headers)
@@ -288,10 +297,6 @@ def _read_state_file(path: Path) -> dict[str, Any]:
         return {}
 
 
-def _read_state() -> dict[str, Any]:
-    return _read_state_file(DEFAULT_STATE_PATH)
-
-
 def _coerce_float(value: Any) -> float:
     if isinstance(value, (int, float)):
         return float(value)
@@ -305,36 +310,108 @@ def _coerce_float_or(value: Any, default: float) -> float:
         return default
 
 
-def _pruned_post_tool_use_state(state: dict[str, Any], now: float) -> dict[str, dict[str, float]]:
-    raw_throttle = state.get(POST_TOOL_USE_STATE_KEY)
-    if not isinstance(raw_throttle, dict):
+def _coerce_int_or(value: Any, default: int) -> int:
+    try:
+        return int(value)
+    except Exception:  # noqa: BLE001
+        return default
+
+
+def _pruned_session_cursors(state: dict[str, Any], now: float) -> dict[str, dict[str, float | int]]:
+    raw_cursors = state.get(SESSION_CURSOR_STATE_KEY)
+    if not isinstance(raw_cursors, dict):
         return {}
 
     cutoff = now - METRIC_LOOKBACK_SECONDS
-    throttle: dict[str, dict[str, float]] = {}
-    for session_path, raw_entry in raw_throttle.items():
+    cursors: dict[str, dict[str, float | int]] = {}
+    for session_path, raw_entry in raw_cursors.items():
         if not isinstance(raw_entry, dict):
             continue
         updated_at = _coerce_float_or(raw_entry.get("updated_at"), 0.0)
         if updated_at < cutoff:
             continue
-        throttle[str(session_path)] = {
-            "last_attempted_at": _coerce_float_or(raw_entry.get("last_attempted_at"), 0.0),
-            "last_observed_at": _coerce_float_or(raw_entry.get("last_observed_at"), 0.0),
+        cursors[str(session_path)] = {
+            "inode": _coerce_int_or(raw_entry.get("inode"), 0),
+            "offset": _coerce_int_or(raw_entry.get("offset"), 0),
+            "mtime": _coerce_float_or(raw_entry.get("mtime"), 0.0),
             "updated_at": updated_at,
         }
-    return throttle
+    return cursors
+
+
+def _prune_state(state: dict[str, Any], now: float) -> dict[str, Any]:
+    payload = dict(state)
+    payload.pop("post_tool_use", None)
+
+    cursors = _pruned_session_cursors(payload, now)
+    if cursors:
+        payload[SESSION_CURSOR_STATE_KEY] = cursors
+    else:
+        payload.pop(SESSION_CURSOR_STATE_KEY, None)
+
+    worker_pid = _coerce_int_or(payload.get("worker_pid"), 0)
+    if worker_pid <= 0:
+        payload.pop("worker_pid", None)
+        payload.pop("worker_started_at", None)
+    payload.pop("worker_starting", None)
+
+    return payload
 
 
 def _write_state_payload(state: dict[str, Any], now: float | None = None) -> None:
     now = time.time() if now is None else now
-    payload = dict(state)
-    throttle = _pruned_post_tool_use_state(payload, now)
-    if throttle:
-        payload[POST_TOOL_USE_STATE_KEY] = throttle
-    else:
-        payload.pop(POST_TOOL_USE_STATE_KEY, None)
+    payload = _prune_state(state, now)
     _write_json(DEFAULT_STATE_PATH, payload)
+
+
+def _with_lock(lock_path: Path, callback):
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    with lock_path.open("a+", encoding="utf-8") as lock_handle:
+        fcntl.flock(lock_handle.fileno(), fcntl.LOCK_EX)
+        return callback()
+
+
+def _read_state_locked() -> dict[str, Any]:
+    return _read_state_file(DEFAULT_STATE_PATH)
+
+
+def _update_state(mutator, *, now: float | None = None) -> Any:
+    now = time.time() if now is None else now
+
+    def _inner():
+        state = _read_state_locked()
+        result = mutator(state, now)
+        _write_state_payload(state, now)
+        return result
+
+    return _with_lock(DEFAULT_STATE_LOCK_PATH, _inner)
+
+
+def _pid_is_running(pid: int) -> bool:
+    if pid <= 0:
+        return False
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    else:
+        return True
+
+
+def _worker_is_healthy(state: dict[str, Any], now: float) -> bool:
+    pid = _coerce_int_or(state.get("worker_pid"), 0)
+    if pid > 0 and _pid_is_running(pid):
+        return True
+    starting_at = _coerce_float_or(state.get("worker_starting_at"), 0.0)
+    return starting_at > 0 and now - starting_at < WORKER_START_GRACE_SECONDS
+
+
+def _clear_worker_metadata(state: dict[str, Any]) -> None:
+    state.pop("worker_pid", None)
+    state.pop("worker_started_at", None)
+    state.pop("worker_starting_at", None)
 
 
 def _record_exported_snapshot(state: dict[str, Any], snapshot: Snapshot, now: float | None = None) -> None:
@@ -347,7 +424,6 @@ def _record_exported_snapshot(state: dict[str, Any], snapshot: Snapshot, now: fl
             "updated_at": time.time() if now is None else now,
         }
     )
-    _write_state_payload(state, now)
 
 
 def _get_last_export_cursor(state: dict[str, Any]) -> tuple[float, str]:
@@ -421,45 +497,120 @@ def _build_snapshot(record: dict[str, Any], session_path: str) -> Snapshot | Non
     )
 
 
-def _find_snapshots_since(state: dict[str, Any]) -> list[Snapshot]:
-    preferred: list[Snapshot] = []
-    fallback: list[Snapshot] = []
+def _snapshot_is_newer(snapshot: Snapshot, observed_at: float, identity: str) -> bool:
+    if snapshot.observed_at > observed_at:
+        return True
+    if snapshot.observed_at < observed_at:
+        return False
+    return snapshot.identity > identity
+
+
+def _scan_session_file(
+    session_path: str,
+    cursor: dict[str, float | int] | None,
+    last_observed_at: float,
+    last_identity: str,
+    now: float,
+) -> tuple[dict[str, float | int], Snapshot | None, Snapshot | None]:
+    stat_result = os.stat(session_path)
+    inode = int(stat_result.st_ino)
+    size = int(stat_result.st_size)
+    mtime = float(stat_result.st_mtime)
+
+    offset = 0
+    if cursor is not None:
+        same_inode = _coerce_int_or(cursor.get("inode"), 0) == inode
+        previous_offset = _coerce_int_or(cursor.get("offset"), 0)
+        previous_mtime = _coerce_float_or(cursor.get("mtime"), 0.0)
+        if same_inode and size >= previous_offset and (size != previous_offset or mtime != previous_mtime):
+            offset = previous_offset
+        elif same_inode and size == previous_offset and mtime == previous_mtime:
+            return {
+                "inode": inode,
+                "offset": size,
+                "mtime": mtime,
+                "updated_at": now,
+            }, None, None
+
+    preferred: Snapshot | None = None
+    fallback: Snapshot | None = None
+    with open(session_path, "r", encoding="utf-8") as handle:
+        if offset > 0:
+            handle.seek(offset)
+        for line in handle:
+            record = json.loads(line)
+            if record.get("type") != "event_msg":
+                continue
+            snapshot = _build_snapshot(record, session_path)
+            if snapshot is None or not _snapshot_is_newer(snapshot, last_observed_at, last_identity):
+                continue
+            if snapshot.limit_id == PREFERRED_LIMIT_ID:
+                if preferred is None or _snapshot_is_newer(snapshot, preferred.observed_at, preferred.identity):
+                    preferred = snapshot
+            elif fallback is None or _snapshot_is_newer(snapshot, fallback.observed_at, fallback.identity):
+                fallback = snapshot
+        end_offset = handle.tell()
+
+    return {
+        "inode": inode,
+        "offset": end_offset,
+        "mtime": mtime,
+        "updated_at": now,
+    }, preferred, fallback
+
+
+def _find_newest_snapshot(state: dict[str, Any], now: float) -> Snapshot | None:
+    preferred: Snapshot | None = None
+    fallback: Snapshot | None = None
     last_observed_at, last_identity = _get_last_export_cursor(state)
+    cursors = _pruned_session_cursors(state, now)
+
     session_paths = sorted(
         glob.glob(str(Path.home() / ".codex" / "sessions" / "**" / "*.jsonl"), recursive=True),
         key=lambda p: os.path.getmtime(p),
         reverse=True,
     )
+    seen_paths = set(session_paths)
+    for stale_path in list(cursors):
+        if stale_path not in seen_paths:
+            cursors.pop(stale_path, None)
+
     for session_path in session_paths:
+        cursor = cursors.get(session_path)
         try:
-            with open(session_path, "r", encoding="utf-8") as handle:
-                for line in handle:
-                    record = json.loads(line)
-                    if record.get("type") != "event_msg":
-                        continue
-                    snapshot = _build_snapshot(record, session_path)
-                    if snapshot is None:
-                        continue
-                    if snapshot.observed_at < last_observed_at:
-                        continue
-                    if snapshot.observed_at == last_observed_at and snapshot.identity <= last_identity:
-                        continue
-                    if snapshot.limit_id == PREFERRED_LIMIT_ID:
-                        preferred.append(snapshot)
-                    else:
-                        fallback.append(snapshot)
+            next_cursor, preferred_candidate, fallback_candidate = _scan_session_file(
+                session_path,
+                cursor,
+                last_observed_at,
+                last_identity,
+                now,
+            )
+            cursors[session_path] = next_cursor
+        except FileNotFoundError:
+            cursors.pop(session_path, None)
+            continue
         except Exception as exc:  # noqa: BLE001
             _post_log("ERROR", "codex quota parse error", {"session_path": session_path, "error": exc})
+            continue
 
-    snapshots = preferred if preferred else fallback
-    snapshots.sort(key=lambda snapshot: (snapshot.observed_at, snapshot.identity))
-    if snapshots and snapshots[0].limit_id != PREFERRED_LIMIT_ID:
+        if preferred_candidate is not None and (
+            preferred is None or _snapshot_is_newer(preferred_candidate, preferred.observed_at, preferred.identity)
+        ):
+            preferred = preferred_candidate
+        if fallback_candidate is not None and (
+            fallback is None or _snapshot_is_newer(fallback_candidate, fallback.observed_at, fallback.identity)
+        ):
+            fallback = fallback_candidate
+
+    state[SESSION_CURSOR_STATE_KEY] = cursors
+    newest = preferred or fallback
+    if newest is not None and newest.limit_id != PREFERRED_LIMIT_ID:
         _post_log(
             "WARN",
             "codex quota exporter using fallback limit_id",
-            {"limit_id": snapshots[0].limit_id, "preferred_limit_id": PREFERRED_LIMIT_ID},
+            {"limit_id": newest.limit_id, "preferred_limit_id": PREFERRED_LIMIT_ID},
         )
-    return snapshots
+    return newest
 
 
 def _hook_event_name(hook_payload: dict[str, Any]) -> str:
@@ -480,141 +631,216 @@ def _parse_hook_payload(raw_hook_input: bytes) -> dict[str, Any]:
     return {}
 
 
-def _newest_snapshot_by_session(snapshots: list[Snapshot]) -> dict[str, Snapshot]:
-    newest: dict[str, Snapshot] = {}
-    for snapshot in snapshots:
-        current = newest.get(snapshot.session_path)
-        if current is None or (snapshot.observed_at, snapshot.identity) > (current.observed_at, current.identity):
-            newest[snapshot.session_path] = snapshot
-    return newest
-
-
-def _eligible_post_tool_use_sessions(
-    state: dict[str, Any],
-    snapshots: list[Snapshot],
-    now: float,
-) -> dict[str, Snapshot]:
-    throttle = _pruned_post_tool_use_state(state, now)
-    eligible: dict[str, Snapshot] = {}
-    for session_path, snapshot in _newest_snapshot_by_session(snapshots).items():
-        entry = throttle.get(session_path)
-        if entry is None or now - entry["last_attempted_at"] >= POST_TOOL_USE_THROTTLE_SECONDS:
-            eligible[session_path] = snapshot
-    return eligible
-
-
-def _record_post_tool_use_attempts(
-    state: dict[str, Any],
-    eligible: dict[str, Snapshot],
-    now: float,
-) -> None:
-    throttle = _pruned_post_tool_use_state(state, now)
-    for session_path, snapshot in eligible.items():
-        throttle[session_path] = {
-            "last_attempted_at": now,
-            "last_observed_at": snapshot.observed_at,
-            "updated_at": now,
-        }
-    state[POST_TOOL_USE_STATE_KEY] = throttle
-    _write_state_payload(state, now)
-
-
-def _export_snapshots_locked(state: dict[str, Any], snapshots: list[Snapshot], event_name: str) -> int:
-    if not snapshots:
-        return 0
-    if len(snapshots) > 1:
-        _post_log(
-            "WARN",
-            "codex quota export replaying backlog",
-            {"backlog_length": len(snapshots), "event_name": event_name},
+def _spawn_worker() -> int:
+    DEFAULT_LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
+    stderr_handle = DEFAULT_LOG_FILE.open("a", encoding="utf-8")
+    try:
+        proc = subprocess.Popen(
+            [sys.executable, str(SCRIPT_PATH), "--worker"],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=stderr_handle,
+            close_fds=True,
+            start_new_session=True,
         )
+    finally:
+        stderr_handle.close()
+    return proc.pid
 
+
+def _export_snapshot(snapshot: Snapshot, event_name: str, *, timeout: int) -> int:
     endpoint, headers = _load_endpoint_and_headers()
-    for snapshot in snapshots:
-        try:
-            _post_json(f"{endpoint}/v1/metrics", _build_metrics(snapshot), headers)
-        except urllib.error.HTTPError as exc:
-            body = exc.read(500).decode("utf-8", errors="replace")
-            _post_log(
-                "ERROR",
-                "codex quota export failed",
-                {
-                    "status": exc.code,
-                    "error": body or str(exc),
-                    "identity": snapshot.identity,
-                    "observed_at": snapshot.observed_at,
-                    "limit_id": snapshot.limit_id,
-                    "session_path": snapshot.session_path,
-                    "event_name": event_name,
-                },
-            )
-            return 1
-        except Exception as exc:  # noqa: BLE001
-            _post_log(
-                "ERROR",
-                "codex quota export failed",
-                {
-                    "error": str(exc),
-                    "identity": snapshot.identity,
-                    "observed_at": snapshot.observed_at,
-                    "limit_id": snapshot.limit_id,
-                    "session_path": snapshot.session_path,
-                    "event_name": event_name,
-                },
-            )
-            return 1
-        _record_exported_snapshot(state, snapshot)
+    try:
+        _post_json(f"{endpoint}/v1/metrics", _build_metrics(snapshot), headers, timeout=timeout)
+    except urllib.error.HTTPError as exc:
+        body = exc.read(500).decode("utf-8", errors="replace")
         _post_log(
-            "INFO",
-            "codex quota export succeeded",
+            "ERROR",
+            "codex quota export failed",
             {
-                "session_path": snapshot.session_path,
+                "status": exc.code,
+                "error": body or str(exc),
                 "identity": snapshot.identity,
-                "hook_event": event_name,
-                "plan_type": snapshot.plan_type,
-                "limit_id": snapshot.limit_id,
                 "observed_at": snapshot.observed_at,
-                "reached_window": snapshot.rate_limit_reached_type or "none",
-                "reached_reason": snapshot.reached_reason,
-                "five_hour_used_percent": snapshot.primary["used_percent"],
-                "seven_day_used_percent": snapshot.secondary["used_percent"],
+                "limit_id": snapshot.limit_id,
+                "session_path": snapshot.session_path,
+                "event_name": event_name,
             },
         )
+        return 1
+    except Exception as exc:  # noqa: BLE001
+        _post_log(
+            "ERROR",
+            "codex quota export failed",
+            {
+                "error": str(exc),
+                "identity": snapshot.identity,
+                "observed_at": snapshot.observed_at,
+                "limit_id": snapshot.limit_id,
+                "session_path": snapshot.session_path,
+                "event_name": event_name,
+            },
+        )
+        return 1
+
+    _post_log(
+        "INFO",
+        "codex quota export succeeded",
+        {
+            "session_path": snapshot.session_path,
+            "identity": snapshot.identity,
+            "hook_event": event_name,
+            "plan_type": snapshot.plan_type,
+            "limit_id": snapshot.limit_id,
+            "observed_at": snapshot.observed_at,
+            "reached_window": snapshot.rate_limit_reached_type or "none",
+            "reached_reason": snapshot.reached_reason,
+            "five_hour_used_percent": snapshot.primary["used_percent"],
+            "seven_day_used_percent": snapshot.secondary["used_percent"],
+        },
+    )
     return 0
 
 
-def _run_locked_exports(event_name: str) -> int:
-    DEFAULT_EXPORT_LOCK_PATH.parent.mkdir(parents=True, exist_ok=True)
-    with DEFAULT_EXPORT_LOCK_PATH.open("a+", encoding="utf-8") as lock_handle:
-        fcntl.flock(lock_handle.fileno(), fcntl.LOCK_EX)
-        state = _read_state()
-        snapshots = _find_snapshots_since(state)
-        return _export_snapshots_locked(state, snapshots, event_name)
+def _run_export_cycle(event_name: str, *, timeout: int) -> int:
+    def _inner() -> int:
+        now = time.time()
+        state = _read_state_locked()
+        state["last_scan_started_at"] = now
+        state["updated_at"] = now
+        snapshot = _find_newest_snapshot(state, now)
+        _write_state_payload(state, now)
+        if snapshot is None:
+            return 0
+
+        rc = _export_snapshot(snapshot, event_name, timeout=timeout)
+        finish = time.time()
+        if rc == 0:
+            def _record(state: dict[str, Any], locked_now: float) -> None:
+                _record_exported_snapshot(state, snapshot, finish)
+                state["updated_at"] = locked_now
+            _update_state(_record, now=finish)
+        return rc
+
+    return _with_lock(DEFAULT_EXPORT_LOCK_PATH, _inner)
 
 
 def _run_post_tool_use(event_name: str) -> int:
     now = time.time()
-    DEFAULT_EXPORT_LOCK_PATH.parent.mkdir(parents=True, exist_ok=True)
-    with DEFAULT_EXPORT_LOCK_PATH.open("a+", encoding="utf-8") as lock_handle:
-        fcntl.flock(lock_handle.fileno(), fcntl.LOCK_EX)
-        state = _read_state()
-        snapshots = _find_snapshots_since(state)
-        if not snapshots:
-            return 0
 
-        eligible = _eligible_post_tool_use_sessions(state, snapshots, now)
-        if not eligible:
-            return 0
+    def _mark(state: dict[str, Any], locked_now: float) -> bool:
+        healthy = _worker_is_healthy(state, locked_now)
+        state["last_activity_at"] = locked_now
+        state["updated_at"] = locked_now
+        if healthy:
+            return False
+        _clear_worker_metadata(state)
+        state["worker_starting_at"] = locked_now
+        return True
 
-        _record_post_tool_use_attempts(state, eligible, now)
-        return _export_snapshots_locked(state, snapshots, event_name)
+    should_spawn = _update_state(_mark, now=now)
+    if not should_spawn:
+        return 0
+
+    try:
+        pid = _spawn_worker()
+    except Exception as exc:  # noqa: BLE001
+        def _clear(state: dict[str, Any], locked_now: float) -> None:
+            _clear_worker_metadata(state)
+            state["last_activity_at"] = max(_coerce_float_or(state.get("last_activity_at"), 0.0), now)
+            state["updated_at"] = locked_now
+        _update_state(_clear)
+        _post_log("ERROR", "codex quota worker spawn failed", {"error": exc, "event_name": event_name})
+        return 0
+
+    def _record_pid(state: dict[str, Any], locked_now: float) -> None:
+        state["worker_pid"] = pid
+        state["worker_started_at"] = locked_now
+        state.pop("worker_starting_at", None)
+        state["updated_at"] = locked_now
+
+    _update_state(_record_pid)
+    return 0
+
+
+def _worker_should_exit(state: dict[str, Any], now: float) -> bool:
+    last_activity = _coerce_float_or(state.get("last_activity_at"), 0.0)
+    last_attempt = _coerce_float_or(state.get("last_worker_attempted_at"), 0.0)
+    if last_activity <= 0:
+        return True
+    if last_activity > last_attempt:
+        return False
+    return now - last_activity >= WORKER_IDLE_SECONDS
+
+
+def _worker_sleep_seconds(state: dict[str, Any], now: float) -> float:
+    last_activity = _coerce_float_or(state.get("last_activity_at"), 0.0)
+    last_attempt = _coerce_float_or(state.get("last_worker_attempted_at"), 0.0)
+    if last_activity > last_attempt:
+        remaining = ACTIVE_DEBOUNCE_SECONDS - (now - last_attempt)
+        return max(float(WORKER_POLL_SECONDS), remaining)
+    remaining = WORKER_IDLE_SECONDS - (now - last_activity)
+    return max(float(WORKER_POLL_SECONDS), remaining)
+
+
+def _run_worker() -> int:
+    now = time.time()
+
+    def _register(state: dict[str, Any], locked_now: float) -> None:
+        state["worker_pid"] = os.getpid()
+        state["worker_started_at"] = locked_now
+        state.pop("worker_starting_at", None)
+        state.setdefault("last_activity_at", locked_now)
+        state["updated_at"] = locked_now
+
+    _update_state(_register, now=now)
+
+    try:
+        while True:
+            def _snapshot_state(state: dict[str, Any], locked_now: float) -> dict[str, float]:
+                current_pid = _coerce_int_or(state.get("worker_pid"), 0)
+                if current_pid not in (0, os.getpid()):
+                    return {"takeover": 1.0, "sleep": 0.0}
+                state["worker_pid"] = os.getpid()
+                state["worker_started_at"] = _coerce_float_or(state.get("worker_started_at"), locked_now)
+                state["updated_at"] = locked_now
+                if _worker_should_exit(state, locked_now):
+                    return {"exit": 1.0, "sleep": 0.0}
+                last_activity = _coerce_float_or(state.get("last_activity_at"), 0.0)
+                last_attempt = _coerce_float_or(state.get("last_worker_attempted_at"), 0.0)
+                if last_activity > last_attempt and locked_now - last_attempt >= ACTIVE_DEBOUNCE_SECONDS:
+                    state["last_worker_attempted_at"] = locked_now
+                    state["updated_at"] = locked_now
+                    return {"export": 1.0, "sleep": 0.0}
+                return {"sleep": _worker_sleep_seconds(state, locked_now)}
+
+            status = _update_state(_snapshot_state)
+            if status.get("takeover"):
+                return 0
+            if status.get("exit"):
+                return 0
+            if status.get("export"):
+                _run_export_cycle("PostToolUse", timeout=DEFAULT_TIMEOUT_SECONDS)
+                continue
+            time.sleep(status.get("sleep", float(WORKER_POLL_SECONDS)))
+    finally:
+        def _cleanup(state: dict[str, Any], locked_now: float) -> None:
+            if _coerce_int_or(state.get("worker_pid"), 0) == os.getpid():
+                _clear_worker_metadata(state)
+                state["updated_at"] = locked_now
+        _update_state(_cleanup)
 
 
 def _run_flush(event_name: str) -> int:
-    return _run_locked_exports(event_name)
+    return _run_export_cycle(event_name, timeout=FLUSH_TIMEOUT_SECONDS)
 
 
 def main() -> int:
+    if len(sys.argv) >= 2 and sys.argv[1] == "--worker":
+        return _run_worker()
+    if len(sys.argv) >= 2 and sys.argv[1] == "--flush-now":
+        return _run_flush("flush-now")
+
     raw_hook_input = sys.stdin.buffer.read()
     hook_payload = _parse_hook_payload(raw_hook_input)
     event_name = _hook_event_name(hook_payload)
