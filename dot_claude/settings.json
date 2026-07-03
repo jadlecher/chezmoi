@@ -29,6 +29,7 @@
     "pyright-lsp@claude-plugins-official": true
   },
   "effortLevel": "medium",
+  "showClearContextOnPlanAccept": true,
   "skipDangerousModePermissionPrompt": true,
   "theme": "light",
   "skipAutoPermissionPrompt": true
