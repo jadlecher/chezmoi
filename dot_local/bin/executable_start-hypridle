@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [ -n "${DBUS_SESSION_BUS_ADDRESS:-}" ]; then
+  exec hypridle "$@"
+fi
+
+printf '%s\n' "start-hypridle: refusing to start hypridle without DBUS_SESSION_BUS_ADDRESS" >&2
+printf '%s\n' "start-hypridle: select the managed Hyprland session wrapper and log in again" >&2
+exit 1

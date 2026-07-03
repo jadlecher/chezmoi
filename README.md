@@ -85,9 +85,11 @@ chezmoi apply --dry-run --refresh-externals
 ## Hyprland session wrapper
 
 - `~/.local/bin/start-hyprland-dbus` wraps `/usr/bin/start-hyprland` in `dbus-run-session`.
-- `~/.local/share/wayland-sessions/hyprland-dbus.desktop` provides a session entry that launches Hyprland with an inherited `DBUS_SESSION_BUS_ADDRESS`.
+- `hypridle` is started directly by Hyprland and must inherit the graphical session bus; `~/.local/bin/start-hypridle` is only a strict diagnostic wrapper and refuses to start without `DBUS_SESSION_BUS_ADDRESS`.
+- `~/.local/share/wayland-sessions/hyprland.desktop` intentionally shadows the packaged `Hyprland` entry by launching `~/.local/bin/start-hyprland-dbus`.
+- `~/.local/share/wayland-sessions/hyprland-dbus.desktop` provides an explicit `Hyprland (D-Bus)` entry for diagnostics or fallback selection.
 - This is Linux-generic and avoids patching packaged session files under `/usr/share`.
-- `run_onchange_after_fix-hyprland-session-dbus.sh.tmpl` mirrors that desktop entry into `/usr/local/share/wayland-sessions/` so `greetd`/`regreet` can see it without modifying package-owned files, and only re-runs when the source desktop entry changes.
+- `run_onchange_after_fix-hyprland-session-dbus.sh.tmpl` mirrors both desktop entries into `/usr/local/share/wayland-sessions/` so `greetd`/`regreet` can see them without modifying package-owned files, and only re-runs when either source desktop entry changes.
 - Gentoo caveat: this repo uses `sudo install` into `/usr/local/share/wayland-sessions/`, which is Gentoo-safe and Linux-generic, but still depends on local privilege policy during `chezmoi apply`.
 
 ## Kvantum Catppuccin themes (Qt apps, including wpa_gui)

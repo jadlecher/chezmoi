@@ -116,7 +116,7 @@ while [ "$attempt" -le "$attempts" ]; do
     laptop_enabled="$(
       printf '%s\n' "$monitors_json" |
         jq -r --arg laptop_output "$laptop_output" \
-          '([.[] | select(.name == $laptop_output) | ((.disabled // false) == false)] | first) // false' 2>/dev/null || printf 'false\n'
+          '[.[] | select(.name == $laptop_output) | (.disabled // false) == false] | first // false' 2>/dev/null || printf 'false\n'
     )"
     external_active_count="$(
       printf '%s\n' "$monitors_json" |
@@ -150,27 +150,34 @@ if [ "$laptop_present" != "true" ]; then
   exit 0
 fi
 
-target_enable="true"
+# Lid closed with an external monitor present -> disable the panel; otherwise
+# keep it enabled (lid open, or it's the only screen). Hyprland's headless
+# fallback path is patched to survive reaching zero real monitors
+# (findings/2026-06-20-hyprland-segv-resume-monitor-race.md), so disabling
+# eDP-1 here no longer risks the resume SEGV.
+desired_enabled="true"
 if [ "$lid_state" = "closed" ] && [ "$external_active_count" -gt 0 ]; then
-  target_enable="false"
+  desired_enabled="false"
 fi
 
-if [ "$target_enable" = "$laptop_enabled" ]; then
+if [ "$desired_enabled" = "$laptop_enabled" ]; then
   log "no change (lid=$lid_state external_active=$external_active_count laptop_enabled=$laptop_enabled)"
   exit 0
 fi
 
-if [ "$target_enable" = "true" ]; then
-  action="enable"
-  value="$enable_config"
+if [ "$desired_enabled" = "true" ]; then
+  log "enable laptop output '$laptop_output' (lid=$lid_state external_active=$external_active_count)"
+  monitor_value="$enable_config"
+  verb="Enabling"
 else
-  action="disable"
-  value="disable"
+  log "disable laptop output '$laptop_output' (lid=$lid_state external_active=$external_active_count)"
+  monitor_value="disable"
+  verb="Disabling"
 fi
 
-log "$action laptop output '$laptop_output' (lid=$lid_state external_active=$external_active_count)"
 if [ "$dry_run" = "true" ]; then
   exit 0
 fi
 
-hyprctl keyword monitor "$laptop_output, $value"
+command -v notify-send >/dev/null 2>&1 && notify-send "Clamshell Mode" "$verb laptop output" || true
+hyprctl keyword monitor "$laptop_output, $monitor_value"

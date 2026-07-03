@@ -1,21 +1,22 @@
 #!/bin/sh
-# Ensure a D-Bus-wrapped Hyprland session entry is available system-wide for
+# Ensure D-Bus-wrapped Hyprland session entries are available system-wide for
 # greeters that only enumerate system session directories.
 #
 # On OpenRC-style setups, DBUS_SESSION_BUS_ADDRESS is not exported unless the
 # graphical session is started inside dbus-run-session. We keep the wrapper and
-# primary desktop entry in the user's home, then mirror the session entry into
-# /usr/local/share/wayland-sessions so greetd/regreet can reliably see it.
+# desktop entries in the user's home, then mirror the session entries into
+# /usr/local/share/wayland-sessions so greetd/regreet can reliably see them.
 #
 # Chezmoi trigger marker: {{ include "dot_local/share/wayland-sessions/hyprland-dbus.desktop" | sha256sum }}
+# Chezmoi trigger marker: {{ include "dot_local/share/wayland-sessions/hyprland.desktop" | sha256sum }}
 set -eu
 
-SOURCE_DESKTOP="${HOME}/.local/share/wayland-sessions/hyprland-dbus.desktop"
-TARGET_DESKTOP="/usr/local/share/wayland-sessions/hyprland-dbus.desktop"
+SOURCE_DIR="${HOME}/.local/share/wayland-sessions"
+TARGET_DIR="/usr/local/share/wayland-sessions"
 
-if [ ! -f "$SOURCE_DESKTOP" ]; then
-    exit 0
-fi
-
-sudo install -d -m 0755 /usr/local/share/wayland-sessions
-sudo install -m 0644 "$SOURCE_DESKTOP" "$TARGET_DESKTOP"
+sudo install -d -m 0755 "$TARGET_DIR"
+for desktop in hyprland.desktop hyprland-dbus.desktop; do
+    if [ -f "${SOURCE_DIR}/${desktop}" ]; then
+        sudo install -m 0644 "${SOURCE_DIR}/${desktop}" "${TARGET_DIR}/${desktop}"
+    fi
+done
