@@ -7,11 +7,13 @@ plan_mode_reasoning_effort = "high"
 {{- $projects := "" -}}
 {{- $tuiNux := "" -}}
 {{- $migrations := "" -}}
+{{- $wanderlog := "" -}}
 {{- $hooksState := "" -}}
 {{- if stat $path }}
 {{- $projects = output "awk" "{ if(index($0,\"[projects.\")==1) cap=1; if(cap && substr($0,1,1)==\"[\" && index($0,\"[projects.\")!=1) cap=0; if(cap) print }" $path -}}
 {{- $tuiNux = output "awk" "{ if(index($0,\"[tui.model_availability_nux]\")==1) cap=1; if(cap && substr($0,1,1)==\"[\" && index($0,\"[tui.model_availability_nux]\")!=1) cap=0; if(cap) print }" $path -}}
 {{- $migrations = output "awk" "{ if(index($0,\"[notice.model_migrations]\")==1) cap=1; if(cap && substr($0,1,1)==\"[\" && index($0,\"[notice.model_migrations]\")!=1) cap=0; if(cap) print }" $path -}}
+{{- $wanderlog = output "awk" "{ if(index($0,\"[mcp_servers.wanderlog\")==1) cap=1; if(cap && substr($0,1,1)==\"[\" && index($0,\"[mcp_servers.wanderlog\")!=1) cap=0; if(cap) print }" $path -}}
 {{- $hooksState = output "awk" "{ if(index($0,\"[hooks.state]\")==1) cap=1; if(cap) print }" $path -}}
 {{- if ne (trim $projects) "" }}
 {{ trim $projects }}
@@ -76,6 +78,11 @@ approval_mode = "approve"
 
 [mcp_servers.chrome-devtools.tools.handle_dialog]
 approval_mode = "approve"
+
+{{- if ne (trim $wanderlog) "" }}
+
+{{ trim $wanderlog }}
+{{- end }}
 
 {{- if ne (trim $hooksState) "" }}
 
