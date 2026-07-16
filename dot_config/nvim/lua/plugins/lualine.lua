@@ -21,8 +21,5 @@ return {
 				end
 			end
 		end
-
-		-- Enable codecompanion integration
-		table.insert(opts.sections.lualine_x, { require("plugins.codecompanion.lualine") })
 	end,
 }
