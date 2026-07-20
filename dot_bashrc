@@ -23,6 +23,14 @@ kubectl_alias=k
 alias ${kubectl_alias}=kubectl
 complete -o default -F __start_kubectl ${kubectl_alias}
 
+# Enable Coder's native Bash completion when Coder is installed.
+if command -v coder >/dev/null 2>&1; then
+  if coder_completion="$(coder completion --shell bash --print 2>/dev/null)"; then
+    eval "$coder_completion"
+  fi
+  unset coder_completion
+fi
+
 # Configure AI API keys and other local secrets outside chezmoi source.
 if [ -f "$HOME/.config/shell/secrets.local" ]; then
   . "$HOME/.config/shell/secrets.local"
