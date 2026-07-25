@@ -103,6 +103,12 @@ chezmoi apply --dry-run --refresh-externals
   - `x11-themes/kvantum` (`~amd64` in Gentoo tree)
   - `x11-themes/catppuccin-kvantum` (`~amd64`/masked in guru)
 
+## K9s Catppuccin themes
+
+- K9s themes are fetched as pinned ChezMoi externals into `~/.config/k9s/skins`.
+- `~/.local/bin/set-theme light` selects `catppuccin-latte`; `dark` selects `catppuccin-mocha`.
+- The switcher updates only `k9s.ui.skin` in the existing k9s config and does not restart running k9s sessions.
+
 ## WSL behavior
 
 - WSL is auto-detected from the Linux kernel release string (looking for `microsoft` or `wsl`).
