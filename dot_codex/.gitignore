@@ -1,6 +1,7 @@
 # Ignore everything in this source dir by default; allowlist managed files only.
 *
 !.gitignore
+!AGENTS.md
 !private_config.toml.tmpl
 !hooks.json.tmpl
 !rate-limit-marketplace/

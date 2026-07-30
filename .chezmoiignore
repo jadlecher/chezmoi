@@ -3,6 +3,7 @@
 # in auth.json and leaves dangling symlinks under tmp/ that break source reads).
 # Keep only the explicitly authored config/plugin files under .codex.
 .codex/*
+!.codex/AGENTS.md
 !.codex/config.toml
 !.codex/hooks.json
 !.codex/rate-limit-marketplace
