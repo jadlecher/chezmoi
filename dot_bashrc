@@ -17,6 +17,7 @@ alias vi="nvim"
 alias vim="nvim"
 export VISUAL=/usr/bin/nvim
 export EDITOR=/usr/bin/nvim
+export REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt
 
 # options related to kubectl
 kubectl_alias=k
