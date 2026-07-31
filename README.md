@@ -50,7 +50,7 @@ chezmoi apply --dry-run --refresh-externals
 
 - AI CLI OTel ingest uses the unmanaged local shell secret `AI_CLI_OTEL_INGEST_TOKEN` in `~/.config/shell/secrets.local`.
 - Claude Code telemetry is configured from `~/.bashrc` and enables OTLP metrics and logs only when that token is set.
-- Codex telemetry is rendered into `~/.codex/config.toml` from the same local token and only enables OTLP log export.
+- Codex telemetry enables OTLP log export in `~/.codex/config.toml` and reads runtime OTel headers inherited from the shell, derived from the same local token.
 - Codex quota metrics are activated through `~/.codex/hooks.json`; the managed local plugin packages the exporter and is reinstalled after managed Codex files are written when the plugin bundle changes during `chezmoi apply`.
 - `PostToolUse` now acts as a fast notifier only: it records session activity and starts or reuses a detached worker so tool-use hooks return immediately.
 - The detached worker debounces active sessions to roughly every 10 seconds, scans Codex session files incrementally, and exports only the newest unseen quota snapshot because the OTel series are gauges.

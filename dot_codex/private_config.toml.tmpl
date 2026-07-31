@@ -45,8 +45,7 @@ environment = "lab"
 log_user_prompt = false
 
 [otel.exporter]
-{{ $ingestToken := env "AI_CLI_OTEL_INGEST_TOKEN" }}
-otlp-http = { endpoint = "https://otel.apps.k8s.infrastructure.lab.example.com/v1/logs", protocol = "binary"{{ if ne $ingestToken "" }}, headers = { "Authorization" = "Bearer {{ $ingestToken }}" }{{ end }} }
+otlp-http = { endpoint = "https://otel.apps.k8s.infrastructure.lab.example.com/v1/logs", protocol = "binary" }
 
 [marketplaces.personal-codex-hooks]
 source_type = "local"
