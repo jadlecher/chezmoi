@@ -44,8 +44,8 @@ class Snapshot:
     observed_at: float
     plan_type: str
     rate_limit_reached_type: str | None
-    primary: dict[str, Any]
-    secondary: dict[str, Any]
+    primary: dict[str, Any] | None
+    secondary: dict[str, Any] | None
     session_path: str
     limit_id: str
     reached_reason: str
@@ -150,6 +150,30 @@ def _metric_point(observed_ns: str, value: float, attrs: list[dict[str, Any]] | 
     return point
 
 
+def _window_label(window: dict[str, Any], fallback: str) -> str:
+    raw_minutes = window.get("window_minutes", window.get("window_duration_mins"))
+    try:
+        minutes = int(float(raw_minutes))
+    except (TypeError, ValueError):
+        return fallback
+
+    if minutes <= 0:
+        return fallback
+    if minutes % (24 * 60) == 0:
+        return f"{minutes // (24 * 60)}d"
+    if minutes % 60 == 0:
+        return f"{minutes // 60}h"
+    return f"{minutes}m"
+
+
+def _available_windows(snapshot: Snapshot) -> list[tuple[str, dict[str, Any]]]:
+    windows = []
+    for fallback, window in (("5h", snapshot.primary), ("7d", snapshot.secondary)):
+        if window is not None:
+            windows.append((_window_label(window, fallback), window))
+    return windows
+
+
 def _window_attrs(window: str, plan_type: str, source_user: str, limit_id: str) -> list[dict[str, Any]]:
     return [
         {"key": "window", "value": {"stringValue": window}},
@@ -173,7 +197,7 @@ def _build_metrics(snapshot: Snapshot) -> dict[str, Any]:
     now = time.time()
     now_ns = str(int(now * 1e9))
     source_user = os.environ.get("USER", "unknown")
-    windows = [("5h", snapshot.primary), ("7d", snapshot.secondary)]
+    windows = _available_windows(snapshot)
 
     used_points = []
     reset_points = []
@@ -441,17 +465,19 @@ def _get_last_export_cursor(state: dict[str, Any]) -> tuple[float, str]:
 
 def _infer_reached_window(
     rate_limit_reached_type: Any,
-    primary_used_percent: float,
-    secondary_used_percent: float,
+    primary_used_percent: float | None,
+    secondary_used_percent: float | None,
+    primary_label: str | None,
+    secondary_label: str | None,
 ) -> tuple[str | None, str]:
     if rate_limit_reached_type == "primary":
-        return "5h", "rate_limit_reached_type"
+        return primary_label, "rate_limit_reached_type"
     if rate_limit_reached_type == "secondary":
-        return "7d", "rate_limit_reached_type"
-    if primary_used_percent >= 100.0:
-        return "5h", "used_percent"
-    if secondary_used_percent >= 100.0:
-        return "7d", "used_percent"
+        return secondary_label, "rate_limit_reached_type"
+    if primary_label is not None and primary_used_percent is not None and primary_used_percent >= 100.0:
+        return primary_label, "used_percent"
+    if secondary_label is not None and secondary_used_percent is not None and secondary_used_percent >= 100.0:
+        return secondary_label, "used_percent"
     return None, "none"
 
 
@@ -463,19 +489,45 @@ def _build_snapshot(record: dict[str, Any], session_path: str) -> Snapshot | Non
     rate_limits = payload.get("rate_limits") or {}
     primary = rate_limits.get("primary")
     secondary = rate_limits.get("secondary")
-    if not isinstance(primary, dict) or not isinstance(secondary, dict):
+    if not isinstance(primary, dict):
+        primary = None
+    if not isinstance(secondary, dict):
+        secondary = None
+    if primary is None and secondary is None:
         return None
 
     observed_at = datetime.fromisoformat(record["timestamp"].replace("Z", "+00:00")).timestamp()
     if time.time() - observed_at > METRIC_LOOKBACK_SECONDS:
         return None
 
-    primary_used_percent = _coerce_float(primary["used_percent"])
-    secondary_used_percent = _coerce_float(secondary["used_percent"])
+    def _normalize_window(window: dict[str, Any] | None) -> dict[str, Any] | None:
+        if window is None:
+            return None
+        normalized = {
+            "used_percent": _coerce_float(window["used_percent"]),
+            "resets_at": _coerce_float(window["resets_at"]),
+        }
+        for duration_key in ("window_minutes", "window_duration_mins"):
+            if duration_key not in window:
+                continue
+            try:
+                normalized[duration_key] = int(float(window[duration_key]))
+            except (TypeError, ValueError):
+                pass
+        return normalized
+
+    primary = _normalize_window(primary)
+    secondary = _normalize_window(secondary)
+    primary_used_percent = primary["used_percent"] if primary is not None else None
+    secondary_used_percent = secondary["used_percent"] if secondary is not None else None
+    primary_label = _window_label(primary, "5h") if primary is not None else None
+    secondary_label = _window_label(secondary, "7d") if secondary is not None else None
     reached_window, reached_reason = _infer_reached_window(
         rate_limits.get("rate_limit_reached_type"),
         primary_used_percent,
         secondary_used_percent,
+        primary_label,
+        secondary_label,
     )
     limit_id = str(rate_limits.get("limit_id") or "unknown")
     return Snapshot(
@@ -483,14 +535,8 @@ def _build_snapshot(record: dict[str, Any], session_path: str) -> Snapshot | Non
         observed_at=observed_at,
         plan_type=str(rate_limits.get("plan_type") or "unknown"),
         rate_limit_reached_type=reached_window,
-        primary={
-            "used_percent": primary_used_percent,
-            "resets_at": _coerce_float(primary["resets_at"]),
-        },
-        secondary={
-            "used_percent": secondary_used_percent,
-            "resets_at": _coerce_float(secondary["resets_at"]),
-        },
+        primary=primary,
+        secondary=secondary,
         session_path=session_path,
         limit_id=limit_id,
         reached_reason=reached_reason,
@@ -683,21 +729,24 @@ def _export_snapshot(snapshot: Snapshot, event_name: str, *, timeout: int) -> in
         )
         return 1
 
+    log_attrs = {
+        "session_path": snapshot.session_path,
+        "identity": snapshot.identity,
+        "hook_event": event_name,
+        "plan_type": snapshot.plan_type,
+        "limit_id": snapshot.limit_id,
+        "observed_at": snapshot.observed_at,
+        "reached_window": snapshot.rate_limit_reached_type or "none",
+        "reached_reason": snapshot.reached_reason,
+    }
+    for label, window in _available_windows(snapshot):
+        log_key = {"5h": "five_hour", "7d": "seven_day"}.get(label, f"window_{label}")
+        log_attrs[f"{log_key}_used_percent"] = window["used_percent"]
+
     _post_log(
         "INFO",
         "codex quota export succeeded",
-        {
-            "session_path": snapshot.session_path,
-            "identity": snapshot.identity,
-            "hook_event": event_name,
-            "plan_type": snapshot.plan_type,
-            "limit_id": snapshot.limit_id,
-            "observed_at": snapshot.observed_at,
-            "reached_window": snapshot.rate_limit_reached_type or "none",
-            "reached_reason": snapshot.reached_reason,
-            "five_hour_used_percent": snapshot.primary["used_percent"],
-            "seven_day_used_percent": snapshot.secondary["used_percent"],
-        },
+        log_attrs,
     )
     return 0
 

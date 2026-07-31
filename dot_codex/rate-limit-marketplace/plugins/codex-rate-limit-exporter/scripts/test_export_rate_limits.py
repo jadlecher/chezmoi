@@ -47,6 +47,48 @@ def iter_points(metrics_payload: dict[str, object]) -> list[tuple[str, dict[str,
 
 
 class ExporterPureTest(unittest.TestCase):
+    def test_build_snapshot_accepts_weekly_only_limit(self) -> None:
+        record = {
+            "timestamp": "2026-07-31T00:00:00Z",
+            "payload": {
+                "type": "token_count",
+                "rate_limits": {
+                    "plan_type": "plus",
+                    "limit_id": "codex",
+                    "primary": {
+                        "used_percent": 18,
+                        "window_minutes": 10080,
+                        "resets_at": 1785972668,
+                    },
+                    "secondary": None,
+                    "rate_limit_reached_type": "primary",
+                },
+            },
+        }
+
+        with mock.patch.object(exporter.time, "time", return_value=1785522000.0):
+            got = exporter._build_snapshot(record, "/session/weekly.jsonl")
+
+        self.assertIsNotNone(got)
+        assert got is not None
+        self.assertEqual(got.primary["window_minutes"], 10080)
+        self.assertIsNone(got.secondary)
+        self.assertEqual(got.rate_limit_reached_type, "7d")
+
+    def test_build_metrics_uses_available_window_labels(self) -> None:
+        current = snapshot("/session/weekly.jsonl", 1000.0)
+        current.primary = {"used_percent": 18.0, "resets_at": 2000.0, "window_minutes": 10080}
+        current.secondary = None
+
+        with mock.patch.object(exporter.time, "time", return_value=2000.0):
+            payload = exporter._build_metrics(current)
+
+        used_points = [
+            point for name, point in iter_points(payload) if name == "codex_cli_rate_limit_used_percent"
+        ]
+        self.assertEqual(len(used_points), 1)
+        self.assertEqual(used_points[0]["attributes"][0]["value"]["stringValue"], "7d")
+
     def test_build_metrics_uses_export_time_timestamps(self) -> None:
         with mock.patch.object(exporter.time, "time", return_value=2000.0):
             payload = exporter._build_metrics(snapshot("/session/a.jsonl", 1000.0))
@@ -244,6 +286,26 @@ class ExporterTest(unittest.TestCase):
             payload["resourceMetrics"][0]["resource"]["attributes"][-1]["value"]["stringValue"],
             "codex-pro",
         )
+
+    def test_flush_exports_weekly_only_snapshot(self) -> None:
+        self.write_session(
+            "2026/07/31/weekly.jsonl",
+            [
+                '{"type":"event_msg","timestamp":"2026-07-31T00:01:00Z","payload":{"type":"token_count","rate_limits":{"plan_type":"plus","limit_id":"codex","primary":{"used_percent":18,"window_minutes":10080,"resets_at":1785972668},"secondary":null}}}',
+            ],
+        )
+        post_json = mock.Mock()
+
+        rc = self.run_flush(1785522100.0, post_json)
+
+        self.assertEqual(rc, 0)
+        self.assertEqual(post_json.call_count, 1)
+        payload = post_json.call_args.args[1]
+        used_points = [
+            point for name, point in iter_points(payload) if name == "codex_cli_rate_limit_used_percent"
+        ]
+        self.assertEqual(len(used_points), 1)
+        self.assertEqual(used_points[0]["attributes"][0]["value"]["stringValue"], "7d")
 
     def test_flush_uses_bounded_timeout(self) -> None:
         self.write_session(
