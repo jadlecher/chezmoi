@@ -305,7 +305,23 @@ local function parse_osc7_dir(sequence)
 	return normalize_dir(dir)
 end
 
-local function build_display_label(cwd, command)
+local function terminal_title(bufnr)
+	local title = trim(vim.b[bufnr].term_title)
+	if title == "" then
+		return nil
+	end
+	title = title:gsub("%s+", " ")
+	if #title > 50 then
+		title = title:sub(1, 49) .. "…"
+	end
+	return title
+end
+
+local function build_display_label(cwd, command, title)
+	if title then
+		return "term:/" .. title
+	end
+
 	local dir_name = basename(cwd)
 	local branch = run_git({ "rev-parse", "--abbrev-ref", "HEAD" }, cwd)
 
@@ -450,7 +466,7 @@ function M.refresh(bufnr)
 	vim.b[bufnr].terminal_name_cwd = cwd
 
 	local command = active_command(bufnr)
-	local new_display = unique_display_label(bufnr, build_display_label(cwd, command))
+	local new_display = unique_display_label(bufnr, build_display_label(cwd, command, terminal_title(bufnr)))
 	local old_display = vim.b[bufnr].terminal_name_display
 	vim.b[bufnr].terminal_name_display = new_display
 	if old_display ~= new_display then
@@ -492,7 +508,8 @@ function M.display_name(bufnr)
 	end
 
 	vim.b[bufnr].terminal_name_cwd = cwd
-	local computed = unique_display_label(bufnr, build_display_label(cwd, active_command(bufnr)))
+	local computed =
+		unique_display_label(bufnr, build_display_label(cwd, active_command(bufnr), terminal_title(bufnr)))
 	vim.b[bufnr].terminal_name_display = computed
 	return computed
 end
