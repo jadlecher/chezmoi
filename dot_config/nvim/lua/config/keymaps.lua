@@ -12,23 +12,35 @@ local function open_terminal(cwd)
 end
 
 local mappings = {
-	["<leader>fT"] = function()
-		open_terminal(vim.fn.getcwd())
-	end,
-	["<leader>ft"] = function()
-		open_terminal(LazyVim.root())
-	end,
-	["<C-/>"] = function()
-		open_terminal(LazyVim.root())
-	end,
-	["<C-_>"] = function()
-		open_terminal(LazyVim.root())
-	end,
+	["<leader>fT"] = {
+		modes = { "n" },
+		callback = function()
+			open_terminal(vim.fn.getcwd())
+		end,
+	},
+	["<leader>ft"] = {
+		modes = { "n" },
+		callback = function()
+			open_terminal(LazyVim.root())
+		end,
+	},
+	["<C-/>"] = {
+		modes = { "n", "t" },
+		callback = function()
+			open_terminal(LazyVim.root())
+		end,
+	},
+	["<C-_>"] = {
+		modes = { "n", "t" },
+		callback = function()
+			open_terminal(LazyVim.root())
+		end,
+	},
 }
 
-for key, callback in pairs(mappings) do
-	for _, mode in ipairs({ "n", "t" }) do
+for key, mapping in pairs(mappings) do
+	for _, mode in ipairs(mapping.modes) do
 		pcall(vim.keymap.del, mode, key)
-		vim.keymap.set(mode, key, callback, { desc = "Terminal (New Buffer)" })
+		vim.keymap.set(mode, key, mapping.callback, { desc = "Terminal (New Buffer)" })
 	end
 end
