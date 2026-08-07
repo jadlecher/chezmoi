@@ -56,8 +56,4 @@ for key, mapping in pairs(mappings) do
 	end
 end
 
-vim.keymap.set("t", "<C-Space><Space>", "<C-\\><C-n>", { desc = "Exit terminal mode" })
-vim.keymap.set("t", "<C-Space>h", "<C-\\><C-n><C-w>h", { desc = "Jump left" })
-vim.keymap.set("t", "<C-Space>j", "<C-\\><C-n><C-w>j", { desc = "Jump down" })
-vim.keymap.set("t", "<C-Space>k", "<C-\\><C-n><C-w>k", { desc = "Jump up" })
-vim.keymap.set("t", "<C-Space>l", "<C-\\><C-n><C-w>l", { desc = "Jump right" })
+vim.keymap.set("t", "<C-Space>", "<C-\\><C-n>", { desc = "Exit terminal mode" })
