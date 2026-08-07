@@ -5,6 +5,15 @@ return {
 	opts = function(_, opts)
 		opts = opts or {}
 		opts.scroll = vim.tbl_deep_extend("force", opts.scroll or {}, { enabled = false })
+		table.insert(opts.dashboard.preset.keys, 3, {
+			icon = " ",
+			key = "t",
+			desc = "Terminal",
+			action = function()
+				vim.cmd.terminal()
+				vim.cmd.startinsert()
+			end,
+		})
 
 		opts.picker = opts.picker or {}
 		opts.picker.sources = opts.picker.sources or {}
