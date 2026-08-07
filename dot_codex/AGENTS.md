@@ -17,15 +17,6 @@
 
 ## Vikunja task tracking
 
-Use vja only when the user explicitly asks to record or manage a task in Vikunja. Do not create tracker entries for ordinary conversation, trivial answers, or untracked implementation work.
+Use Vikunja only when explicitly asked to record, plan, or work on tracked tasks. Check for an existing task before creating one, and treat capture requests as planning only. Keep tasks in the appropriate repository project with concise context and completion criteria sufficient for another agent to resume; use parent/subtask relations for multi-MR epics.
 
-- Resolve the command as `vja` first. If it is not available in the agent shell, use `uvx vja`; interactive shell aliases are not guaranteed to be loaded.
-- Respect vja's configured default project. Do not invent a project, priority, label, or due date unless the user specifies one.
-- Before creating a task, inspect active tasks with `vja ls --json`. Reuse a clearly matching task; if several tasks are plausible matches, ask the user before changing or creating one.
-- Create a concise, actionable title and include relevant context, constraints, and acceptance details in the task note. Never put secrets, tokens, credentials, or private keys in a task.
-- Treat requests such as "record this in Vikunja" as tracker-only requests. Do not implement the underlying work unless the user separately asks for it.
-- For work on an existing task, inspect it with `vja show TASK_ID --json` and keep its ID in progress updates.
-- Mark a task complete with `vja edit TASK_ID --done=true` only after the requested work and relevant validation succeed. Keep blocked or incomplete tasks open; do not use toggle-style completion commands when an idempotent edit is available.
-- Do not delete or bulk-edit tasks without explicit authorization.
-- If vja is unavailable, continue larger requested work with a clear warning. For tracker-only requests, report that recording failed; never invent a task ID or claim that Vikunja was updated.
-- Report the task ID, title, and action taken in the final response.
+Pull implementation work only from `Ready`, then move it through `In Progress` and `Under Review`. Return review changes to `In Progress`, and keep blocked work open in `Blocked` with a brief explanation. Unless a task says otherwise, mark development work `Done` only after the user approves its MR and the MR is merged. Report the task ID and every state change made.
