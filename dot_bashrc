@@ -15,7 +15,6 @@ HISTCONTROL=ignorespace:ignoredups:erasedups
 
 alias vi="nvim"
 alias vim="nvim"
-alias vja="uvx vja"
 export VISUAL=/usr/bin/nvim
 export EDITOR=/usr/bin/nvim
 export REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt

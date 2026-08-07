@@ -27,6 +27,12 @@ chezmoi apply --dry-run --refresh-externals
 ~/.config/media/scripts/sync-images.py
 ```
 
+## Vikunja CLI
+
+- Install `vja` as a persistent user tool with `uv tool install vja`; do not rely on an interactive shell alias or `uvx` for agent use.
+- Upgrade it intentionally with `uv tool upgrade vja`.
+- Keep the host-local configuration and token under `~/.config/vja` untracked.
+
 ## Kernel build helper
 
 - Run `build-kernel` as your normal user. The script self-elevates with `sudo` only for privileged steps.
