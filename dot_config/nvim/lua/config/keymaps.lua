@@ -12,6 +12,13 @@ local function open_terminal(cwd)
 end
 
 local mappings = {
+	["<leader>bD"] = {
+		modes = { "n" },
+		desc = "Delete Buffer and Window",
+		callback = function()
+			vim.cmd(vim.bo.buftype == "terminal" and "bdelete!" or "bdelete")
+		end,
+	},
 	["<leader>fT"] = {
 		modes = { "n" },
 		desc = "Terminal (cwd)",
