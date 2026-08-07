@@ -1,43 +1,32 @@
-local function open_terminal(cwd, command)
-	local bufnr = vim.api.nvim_create_buf(true, false)
-	vim.api.nvim_win_set_buf(0, bufnr)
-
-	local job = vim.fn.jobstart({ command or vim.env.SHELL }, { cwd = cwd, term = true })
-	if job <= 0 then
-		vim.api.nvim_buf_delete(bufnr, { force = true })
-		error("failed to start " .. (command or "$SHELL"))
-	end
-
-	vim.cmd.startinsert()
-end
+local terminal = require("utils.terminal")
 
 local mappings = {
 	["<leader>aC"] = {
 		modes = { "n" },
 		desc = "Claude (cwd)",
 		callback = function()
-			open_terminal(vim.fn.getcwd(), "claude")
+			terminal.open(vim.fn.getcwd(), "claude")
 		end,
 	},
 	["<leader>ac"] = {
 		modes = { "n" },
 		desc = "Claude (Root Dir)",
 		callback = function()
-			open_terminal(LazyVim.root(), "claude")
+			terminal.open(LazyVim.root(), "claude")
 		end,
 	},
 	["<leader>aX"] = {
 		modes = { "n" },
 		desc = "Codex (cwd)",
 		callback = function()
-			open_terminal(vim.fn.getcwd(), "codex")
+			terminal.open(vim.fn.getcwd(), "codex")
 		end,
 	},
 	["<leader>ax"] = {
 		modes = { "n" },
 		desc = "Codex (Root Dir)",
 		callback = function()
-			open_terminal(LazyVim.root(), "codex")
+			terminal.open(LazyVim.root(), "codex")
 		end,
 	},
 	["<leader>bD"] = {
@@ -51,28 +40,28 @@ local mappings = {
 		modes = { "n" },
 		desc = "Terminal (cwd)",
 		callback = function()
-			open_terminal(vim.fn.getcwd())
+			terminal.open(vim.fn.getcwd())
 		end,
 	},
 	["<leader>ft"] = {
 		modes = { "n" },
 		desc = "Terminal (Root Dir)",
 		callback = function()
-			open_terminal(LazyVim.root())
+			terminal.open(LazyVim.root())
 		end,
 	},
 	["<C-/>"] = {
 		modes = { "n", "t" },
 		desc = "Terminal (Root Dir)",
 		callback = function()
-			open_terminal(LazyVim.root())
+			terminal.open(LazyVim.root())
 		end,
 	},
 	["<C-_>"] = {
 		modes = { "n", "t" },
 		desc = "which_key_ignore",
 		callback = function()
-			open_terminal(LazyVim.root())
+			terminal.open(LazyVim.root())
 		end,
 	},
 }

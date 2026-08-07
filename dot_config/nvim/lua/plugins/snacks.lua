@@ -1,4 +1,5 @@
 local terminal_names = require("utils.terminal-names")
+local terminal = require("utils.terminal")
 
 return {
 	"folke/snacks.nvim",
@@ -12,6 +13,22 @@ return {
 			action = function()
 				vim.cmd.terminal()
 				vim.cmd.startinsert()
+			end,
+		})
+		table.insert(opts.dashboard.preset.keys, 4, {
+			icon = " ",
+			key = "C",
+			desc = "Claude",
+			action = function()
+				terminal.open(LazyVim.root(), "claude")
+			end,
+		})
+		table.insert(opts.dashboard.preset.keys, 5, {
+			icon = " ",
+			key = "X",
+			desc = "Codex",
+			action = function()
+				terminal.open(LazyVim.root(), "codex")
 			end,
 		})
 
