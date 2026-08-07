@@ -14,24 +14,28 @@ end
 local mappings = {
 	["<leader>fT"] = {
 		modes = { "n" },
+		desc = "Terminal (cwd)",
 		callback = function()
 			open_terminal(vim.fn.getcwd())
 		end,
 	},
 	["<leader>ft"] = {
 		modes = { "n" },
+		desc = "Terminal (Root Dir)",
 		callback = function()
 			open_terminal(LazyVim.root())
 		end,
 	},
 	["<C-/>"] = {
 		modes = { "n", "t" },
+		desc = "Terminal (Root Dir)",
 		callback = function()
 			open_terminal(LazyVim.root())
 		end,
 	},
 	["<C-_>"] = {
 		modes = { "n", "t" },
+		desc = "which_key_ignore",
 		callback = function()
 			open_terminal(LazyVim.root())
 		end,
@@ -41,7 +45,7 @@ local mappings = {
 for key, mapping in pairs(mappings) do
 	for _, mode in ipairs(mapping.modes) do
 		pcall(vim.keymap.del, mode, key)
-		vim.keymap.set(mode, key, mapping.callback, { desc = "Terminal (New Buffer)" })
+		vim.keymap.set(mode, key, mapping.callback, { desc = mapping.desc })
 	end
 end
 
