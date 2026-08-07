@@ -1,3 +1,9 @@
+{{- /* chezmoi:modify-template */ -}}
+{{- $current := dict -}}
+{{- if ne (trim .chezmoi.stdin) "" -}}
+{{- $current = fromJson .chezmoi.stdin -}}
+{{- end -}}
+{{- $managed := `
 {
   "$schema": "https://json.schemastore.org/claude-code-settings.json",
   "env": {
@@ -33,7 +39,6 @@
   "enabledPlugins": {
     "pyright-lsp@claude-plugins-official": true
   },
-  "effortLevel": "medium",
   "showClearContextOnPlanAccept": true,
   "skipDangerousModePermissionPrompt": true,
   "theme": "light",
@@ -42,3 +47,11 @@
   "useAutoModeDuringPlan": true,
   "autoMemoryEnabled": false
 }
+` | fromJson -}}
+{{- $target := deepCopy $current -}}
+{{- $target = mergeOverwrite $target $managed -}}
+{{- if deepEqual $current $target -}}
+{{ .chezmoi.stdin -}}
+{{- else -}}
+{{ printf "%s\n" ($target | toPrettyJson) -}}
+{{- end -}}
