@@ -13,6 +13,7 @@
 ## Git worktree workflow
 
 - Treat the primary checkout on `main` as a baseline, not an implementation workspace. Do not create a topic branch there or switch it away from `main`.
+- Before starting new work, `main` may be stale; when it is clean and remote access is available, feel free to synchronize it with `git pull` before creating the implementation worktree.
 - Before starting implementation, inspect `git worktree list`. If the current directory is already a linked worktree, continue there. Otherwise reuse a suitable existing linked worktree for the task; if none exists, create a sibling worktree from `main`:
   ```bash
   git worktree add -b <topic-branch> ../<repo>.<topic> main
