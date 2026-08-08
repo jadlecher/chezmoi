@@ -34,3 +34,9 @@ This repository is a personal Linux configuration project managed with [ChezMoi]
 - Instead of running `chezmoi diff`, use `task diff`. This automatically uses the current worktree as the source.
 - For a comprehensive check, run `task validate`, which performs both a `diff` and a `verify`.
 - All `task` commands pass extra arguments to `chezmoi`. For example: `task diff -- --refresh-externals`.
+
+## GitLab CI Components
+
+- Shared GitLab CI components live locally at `~/src/ci/components`.
+- Source reusable CI logic from, or implement it in, that project rather than duplicating it here.
+- Downstream projects must consume components through a semver-tagged release.
