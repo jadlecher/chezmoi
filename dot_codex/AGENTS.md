@@ -5,6 +5,11 @@
 - Treat every line of code and documentation as a maintenance burden. Prefer less when it achieves the goal without sacrificing correctness, security, readability, tests, or necessary error handling.
 - Keep comments, docstrings, and documentation limited to behavior, constraints, decisions, or rationale that a senior developer could not infer from the code. Do not explain basic programming, software-engineering, or tooling concepts.
 
+## Project-external identifiers
+
+- Never include project-external identifiers, such as Vikunja task IDs or tracker URLs, in Git branch names or commit messages, code comments, documentation, merge-request titles or descriptions, or other project artifacts.
+- Keep project artifacts self-contained and describe changes with project-local terminology. Track external references in the external system instead of copying them into the repository or its Git/MR metadata.
+
 ## Git worktree workflow
 
 - Treat the primary checkout on `main` as a baseline, not an implementation workspace. Do not create a topic branch there or switch it away from `main`.
