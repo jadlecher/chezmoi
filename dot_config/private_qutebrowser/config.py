@@ -20,6 +20,9 @@ c.qt.args = [
     "auth-negotiate-delegate-allowlist=sso.apps.k8s.infrastructure.lab.example.com",
 ]
 
+c.tabs.new_position.unrelated = "next"
+c.tabs.new_position.related = "next"
+
 # Set nvim as the default editor
 c.editor.command = [
     "kitty",
