@@ -1,3 +1,5 @@
+worktree-path = "{{ repo_path }}/.worktrees/{{ branch | sanitize }}"
+
 skip-commit-generation-prompt = true
 
 [merge]

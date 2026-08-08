@@ -14,9 +14,9 @@
 
 - Treat the primary checkout on `main` as a baseline, not an implementation workspace. Do not create a topic branch there or switch it away from `main`.
 - Before starting new work, `main` may be stale; when it is clean and remote access is available, feel free to synchronize it with `git pull` before creating the implementation worktree.
-- Before starting implementation, inspect `git worktree list`. If the current directory is already a linked worktree, continue there. Otherwise reuse a suitable existing linked worktree for the task; if none exists, create a sibling worktree from `main`:
+- Before starting implementation, inspect `git worktree list`. If the current directory is already a linked worktree, continue there. Otherwise reuse a suitable existing linked worktree for the task; if none exists, create one under the repo's `.worktrees/` directory from `main`:
   ```bash
-  git worktree add -b <topic-branch> ../<repo>.<topic> main
+  git worktree add -b <topic-branch> .worktrees/<topic-branch> main
   ```
 - If `main` has uncommitted changes, leave them untouched and create the implementation worktree from `main`'s current `HEAD`. Do not reset, stash, move, or copy those changes unless explicitly requested.
 - Make all edits, tests, validation, and commits in the linked worktree. Use the worktree's branch and path when reporting the result, and do not remove existing worktrees or branches without explicit authorization.
