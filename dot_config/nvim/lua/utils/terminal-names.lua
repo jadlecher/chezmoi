@@ -9,6 +9,26 @@ local timer_intervals = {}
 local publish_state = {}
 local state_root = vim.fn.stdpath("state")
 local registry_dir = vim.fs.joinpath(state_root, "agent-workflow", "nvim")
+local agent_names = { codex = true, claude = true }
+local generic_agent_titles = {
+	codex = true,
+	["codex cli"] = true,
+	claude = true,
+	["claude code"] = true,
+	terminal = true,
+	shell = true,
+	bash = true,
+	zsh = true,
+	fish = true,
+	sh = true,
+	starting = true,
+	loading = true,
+	ready = true,
+	working = true,
+	thinking = true,
+	idle = true,
+}
+local agent_summary_max_length = 48
 
 local function is_terminal_buffer(bufnr)
 	return vim.api.nvim_buf_is_valid(bufnr) and vim.bo[bufnr].buftype == "terminal"
@@ -16,6 +36,18 @@ end
 
 local function trim(text)
 	return vim.trim(text or "")
+end
+
+local function terminal_title(bufnr)
+	local title = trim(vim.b[bufnr].term_title)
+	if title == "" or vim.startswith(title, "term://") then
+		return nil
+	end
+	title = title:gsub("%s+", " ")
+	if #title > 50 then
+		title = title:sub(1, 49) .. "…"
+	end
+	return title
 end
 
 local function ensure_registry_dir()
@@ -97,6 +129,21 @@ local function command_name(command)
 	return basename(command)
 end
 
+local function agent_name_from_command(name)
+	if not name then
+		return nil
+	end
+
+	name = name:lower()
+	if name == "claude-code" then
+		return "claude"
+	end
+	if agent_names[name] then
+		return name
+	end
+	return nil
+end
+
 local function is_shell_command(name)
 	return name == "bash" or name == "zsh" or name == "fish" or name == "sh" or name == "dash"
 end
@@ -138,6 +185,16 @@ local function read_proc_cmdline(pid)
 		argv[#argv + 1] = token
 	end
 	return argv
+end
+
+local function agent_name_from_argv(argv)
+	for _, token in ipairs(argv) do
+		local agent = agent_name_from_command(command_name(token))
+		if agent then
+			return agent
+		end
+	end
+	return nil
 end
 
 local function best_name_from_argv(argv)
@@ -226,6 +283,14 @@ local function command_from_pid(pid)
 	return proc and proc.name or nil
 end
 
+local function agent_name_from_pid(pid)
+	return agent_name_from_argv(read_proc_cmdline(pid)) or agent_name_from_command(command_from_pid(pid))
+end
+
+local function pid_is_running(pid)
+	return type(pid) == "number" and pid > 0 and vim.uv.fs_stat(string.format("/proc/%d", pid)) ~= nil
+end
+
 local function most_recent_direct_child_pid(pid)
 	local children = vim.api.nvim_get_proc_children(pid)
 	if type(children) ~= "table" or #children == 0 then
@@ -239,6 +304,58 @@ local function most_recent_direct_child_pid(pid)
 		end
 	end
 	return newest
+end
+
+local function direct_agent(bufnr)
+	local job_pid = vim.b[bufnr].terminal_name_job_pid or terminal_job_pid(bufnr)
+	if not job_pid then
+		return nil
+	end
+	vim.b[bufnr].terminal_name_job_pid = job_pid
+
+	local agent = agent_name_from_pid(job_pid) or agent_name_from_argv(terminal_argv(bufnr))
+	if agent then
+		return agent, job_pid
+	end
+
+	if not is_shell_command(command_from_pid(job_pid)) then
+		return nil
+	end
+	for _, child_pid in ipairs(vim.api.nvim_get_proc_children(job_pid) or {}) do
+		agent = agent_name_from_pid(child_pid)
+		if agent then
+			return agent, child_pid
+		end
+	end
+	return nil
+end
+
+local function clear_agent_state(bufnr)
+	vim.b[bufnr].terminal_name_agent_title_baseline = terminal_title(bufnr)
+	vim.b[bufnr].terminal_name_agent = nil
+	vim.b[bufnr].terminal_name_agent_pid = nil
+	vim.b[bufnr].terminal_name_agent_summary = nil
+	vim.b[bufnr].terminal_name_agent_display = nil
+	vim.b[bufnr].terminal_name_osc_title = nil
+	vim.b[bufnr].terminal_name_osc_title_agent_pid = nil
+end
+
+local function tracked_agent(bufnr)
+	local name = vim.b[bufnr].terminal_name_agent
+	local pid = vim.b[bufnr].terminal_name_agent_pid
+	if name and pid_is_running(pid) and agent_name_from_pid(pid) == name then
+		return name, pid
+	end
+	if name or pid then
+		clear_agent_state(bufnr)
+	end
+
+	name, pid = direct_agent(bufnr)
+	if name then
+		vim.b[bufnr].terminal_name_agent = name
+		vim.b[bufnr].terminal_name_agent_pid = pid
+	end
+	return name, pid
 end
 
 local function active_command(bufnr)
@@ -305,16 +422,77 @@ local function parse_osc7_dir(sequence)
 	return normalize_dir(dir)
 end
 
-local function terminal_title(bufnr)
-	local title = trim(vim.b[bufnr].term_title)
+local function osc_title(sequence)
+	if type(sequence) ~= "string" then
+		return nil
+	end
+	local title = sequence:match("^\27%][02];(.*)")
+	if not title then
+		return nil
+	end
+	return trim(title:gsub("\27\\$", ""):gsub("\7$", ""))
+end
+
+local function title_slug(title, agent, cwd)
+	title = trim(title)
 	if title == "" then
 		return nil
 	end
-	title = title:gsub("%s+", " ")
-	if #title > 50 then
-		title = title:sub(1, 49) .. "…"
+
+	local lower = title:lower()
+	lower = lower:gsub("^" .. agent .. "%s*[-:|—–]%s*", "")
+	if lower == "" or generic_agent_titles[lower] then
+		return nil
 	end
-	return title
+	if lower:match("^%x%x%x%x%x%x%x%x%-%x%x%x%x%-%x%x%x%x%-%x%x%x%x%-%x%x%x%x%x%x%x%x%x%x%x%x$") then
+		return nil
+	end
+
+	local dir_name = basename(cwd)
+	if lower == cwd:lower() or lower == dir_name:lower() or lower:match("^/[%w%._%-%/]+$") then
+		return nil
+	end
+
+	local words = {}
+	for word in lower:gsub("[^%w]+", " "):gmatch("%w+") do
+		local candidate = #words == 0 and word or table.concat(words, "-") .. "-" .. word
+		if #candidate > agent_summary_max_length then
+			break
+		end
+		words[#words + 1] = word
+	end
+	local slug = table.concat(words, "-")
+	if slug == "" or generic_agent_titles[slug:gsub("-", " ")] then
+		return nil
+	end
+	return slug
+end
+
+local function agent_summary(bufnr, agent, cwd)
+	local summary = vim.b[bufnr].terminal_name_agent_summary
+	if summary then
+		return summary
+	end
+
+	local titles = {}
+	if vim.b[bufnr].terminal_name_osc_title_agent_pid == vim.b[bufnr].terminal_name_agent_pid then
+		titles[#titles + 1] = vim.b[bufnr].terminal_name_osc_title
+	end
+	local fallback_title = terminal_title(bufnr)
+	if fallback_title
+		and fallback_title ~= vim.b[bufnr].terminal_name_agent_title_baseline
+		and fallback_title ~= titles[1]
+	then
+		titles[#titles + 1] = fallback_title
+	end
+	for _, title in ipairs(titles) do
+		summary = title_slug(title, agent, cwd)
+		if summary then
+			vim.b[bufnr].terminal_name_agent_summary = summary
+			return summary
+		end
+	end
+	return nil
 end
 
 local function build_display_label(cwd, command, title)
@@ -339,6 +517,14 @@ local function build_display_label(cwd, command, title)
 	end
 
 	return table.concat(parts)
+end
+
+local function build_agent_display_label(bufnr, cwd, agent)
+	local summary = agent_summary(bufnr, agent, cwd)
+	local detail = summary or basename(cwd)
+	local label = string.format("term:/[%s] %s", agent, detail)
+	vim.b[bufnr].terminal_name_agent_display = label
+	return label
 end
 
 local function display_label_in_use(bufnr, label)
@@ -381,13 +567,21 @@ function M.handle_term_request(event)
 		return
 	end
 
-	local cwd = parse_osc7_dir(event.data and event.data.sequence)
-	if not cwd then
-		return
+	local sequence = event.data and event.data.sequence
+	local title = osc_title(sequence)
+	if title then
+		local _, agent_pid = tracked_agent(event.buf)
+		vim.b[event.buf].terminal_name_osc_title = title
+		vim.b[event.buf].terminal_name_osc_title_agent_pid = agent_pid
 	end
 
-	vim.b[event.buf].terminal_name_cwd = cwd
-	M.refresh(event.buf)
+	local cwd = parse_osc7_dir(sequence)
+	if cwd then
+		vim.b[event.buf].terminal_name_cwd = cwd
+	end
+	if title or cwd then
+		M.refresh(event.buf)
+	end
 end
 
 function M.publish(bufnr, cwd, command)
@@ -401,6 +595,7 @@ function M.publish(bufnr, cwd, command)
 	local display_name = vim.b[bufnr].terminal_name_display or ""
 	local tabnr = tabnr_for_buf(bufnr)
 	local job_pid = vim.b[bufnr].terminal_name_job_pid or terminal_job_pid(bufnr) or 0
+	local agent = vim.b[bufnr].terminal_name_agent
 	local payload = {
 		server = server,
 		instance_pid = vim.fn.getpid(),
@@ -410,6 +605,9 @@ function M.publish(bufnr, cwd, command)
 		tool = tool,
 		display_name = display_name,
 		job_pid = job_pid,
+		agent = agent or "",
+		agent_pid = vim.b[bufnr].terminal_name_agent_pid or 0,
+		frozen_display_name = vim.b[bufnr].terminal_name_agent_display or "",
 	}
 	local now_ms = vim.uv.now()
 	local payload_json = vim.json.encode(payload)
@@ -465,8 +663,11 @@ function M.refresh(bufnr)
 	end
 	vim.b[bufnr].terminal_name_cwd = cwd
 
-	local command = active_command(bufnr)
-	local new_display = unique_display_label(bufnr, build_display_label(cwd, command, terminal_title(bufnr)))
+	local agent = tracked_agent(bufnr)
+	local command = agent or active_command(bufnr)
+	local base_display = agent and build_agent_display_label(bufnr, cwd, agent)
+		or build_display_label(cwd, command, terminal_title(bufnr))
+	local new_display = unique_display_label(bufnr, base_display)
 	local old_display = vim.b[bufnr].terminal_name_display
 	vim.b[bufnr].terminal_name_display = new_display
 	if old_display ~= new_display then
