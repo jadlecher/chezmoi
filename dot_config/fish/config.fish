@@ -1,6 +1,29 @@
 if status is-interactive
     set -g fish_greeting
 
+    function __fish_apply_catppuccin_theme --on-variable fish_catppuccin_theme
+        if contains -- "$fish_catppuccin_theme" light dark
+            fish_config theme choose catppuccin-mocha --color-theme="$fish_catppuccin_theme" >/dev/null
+        end
+    end
+
+    function __fish_detect_catppuccin_theme
+        if type -q gsettings
+            set -l color_scheme (gsettings get org.gnome.desktop.interface color-scheme 2>/dev/null)
+            if string match -q '*prefer-light*' -- "$color_scheme"
+                echo light
+                return
+            end
+        end
+
+        echo dark
+    end
+
+    if not set -q fish_catppuccin_theme
+        set -U fish_catppuccin_theme (__fish_detect_catppuccin_theme)
+    end
+    __fish_apply_catppuccin_theme
+
     function prompt_login
     end
 
