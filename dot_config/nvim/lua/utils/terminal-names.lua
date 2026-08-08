@@ -9,6 +9,9 @@ local timer_intervals = {}
 local publish_state = {}
 local state_root = vim.fn.stdpath("state")
 local registry_dir = vim.fs.joinpath(state_root, "agent-workflow", "nvim")
+local codex_sessions_dir = vim.fs.joinpath(vim.fn.expand("~"), ".codex", "sessions")
+local codex_session_start_grace_seconds = 15
+local codex_session_assignments = {}
 local agent_names = { codex = true, claude = true }
 local generic_agent_titles = {
 	codex = true,
@@ -331,11 +334,18 @@ local function direct_agent(bufnr)
 end
 
 local function clear_agent_state(bufnr)
+	local codex_session_id = vim.b[bufnr].terminal_name_codex_session_id
+	if codex_session_id then
+		codex_session_assignments[codex_session_id] = nil
+	end
 	vim.b[bufnr].terminal_name_agent_title_baseline = terminal_title(bufnr)
 	vim.b[bufnr].terminal_name_agent = nil
 	vim.b[bufnr].terminal_name_agent_pid = nil
+	vim.b[bufnr].terminal_name_agent_started_at = nil
 	vim.b[bufnr].terminal_name_agent_summary = nil
 	vim.b[bufnr].terminal_name_agent_display = nil
+	vim.b[bufnr].terminal_name_codex_session_id = nil
+	vim.b[bufnr].terminal_name_codex_session_path = nil
 	vim.b[bufnr].terminal_name_osc_title = nil
 	vim.b[bufnr].terminal_name_osc_title_agent_pid = nil
 end
@@ -354,6 +364,7 @@ local function tracked_agent(bufnr)
 	if name then
 		vim.b[bufnr].terminal_name_agent = name
 		vim.b[bufnr].terminal_name_agent_pid = pid
+		vim.b[bufnr].terminal_name_agent_started_at = os.time()
 	end
 	return name, pid
 end
@@ -468,10 +479,127 @@ local function title_slug(title, agent, cwd)
 	return slug
 end
 
+local function parse_timestamp(timestamp)
+	if type(timestamp) ~= "string" then
+		return nil
+	end
+	local format = "%Y-%m-%dT%H:%M:%SZ"
+	local parsed = vim.fn.strptime(format, (timestamp:gsub("%.%d+Z$", "Z")))
+	local utc_offset = vim.fn.strptime(format, os.date("!%Y-%m-%dT%H:%M:%SZ")) - os.time()
+	return parsed - utc_offset
+end
+
+local function codex_session_metadata(path)
+	local lines = vim.fn.readfile(path, "", 1)
+	if #lines == 0 then
+		return nil
+	end
+
+	local ok, record = pcall(vim.json.decode, lines[1])
+	local payload = ok and record and record.type == "session_meta" and record.payload
+	if type(payload) ~= "table" or payload.source ~= "cli" or type(payload.session_id) ~= "string" then
+		return nil
+	end
+
+	local cwd = type(payload.cwd) == "string" and normalize_dir(payload.cwd) or nil
+	local started_at = parse_timestamp(record.timestamp)
+	if not cwd or not started_at then
+		return nil
+	end
+
+	return {
+		id = payload.session_id,
+		cwd = cwd,
+		started_at = started_at,
+		path = path,
+	}
+end
+
+local function codex_session_for_buffer(bufnr, cwd)
+	local session_id = vim.b[bufnr].terminal_name_codex_session_id
+	local session_path = vim.b[bufnr].terminal_name_codex_session_path
+	if session_id and session_path and vim.fn.filereadable(session_path) == 1 then
+		return session_id, session_path
+	end
+	if vim.fn.isdirectory(codex_sessions_dir) == 0 then
+		return nil
+	end
+
+	local started_at = vim.b[bufnr].terminal_name_agent_started_at
+	if not started_at then
+		return nil
+	end
+
+	local candidates = {}
+	for _, path in ipairs(vim.fn.globpath(codex_sessions_dir, "**/*.jsonl", false, true)) do
+		local metadata = codex_session_metadata(path)
+		if metadata
+			and metadata.cwd == cwd
+			and metadata.started_at >= started_at - codex_session_start_grace_seconds
+			and not codex_session_assignments[metadata.id]
+		then
+			candidates[#candidates + 1] = metadata
+		end
+	end
+	if #candidates == 0 then
+		return nil
+	end
+
+	table.sort(candidates, function(left, right)
+		return left.started_at > right.started_at
+	end)
+	local session = candidates[1]
+	codex_session_assignments[session.id] = bufnr
+	vim.b[bufnr].terminal_name_codex_session_id = session.id
+	vim.b[bufnr].terminal_name_codex_session_path = session.path
+	return session.id, session.path
+end
+
+local function codex_session_prompt(path)
+	local saw_turn_context = false
+	for _, line in ipairs(vim.fn.readfile(path, "", 100)) do
+		local ok, record = pcall(vim.json.decode, line)
+		if ok and type(record) == "table" then
+			if record.type == "turn_context" then
+				saw_turn_context = true
+			elseif saw_turn_context
+				and record.type == "response_item"
+				and type(record.payload) == "table"
+				and record.payload.type == "message"
+				and record.payload.role == "user"
+				and type(record.payload.content) == "table"
+			then
+				for _, content in ipairs(record.payload.content) do
+					if type(content) == "table" and content.type == "input_text" and type(content.text) == "string" then
+						return content.text
+					end
+				end
+			end
+		end
+	end
+	return nil
+end
+
+local function codex_session_summary(bufnr, cwd)
+	local _, path = codex_session_for_buffer(bufnr, cwd)
+	if not path then
+		return nil
+	end
+	return title_slug(codex_session_prompt(path), "codex", cwd)
+end
+
 local function agent_summary(bufnr, agent, cwd)
 	local summary = vim.b[bufnr].terminal_name_agent_summary
 	if summary then
 		return summary
+	end
+	if agent == "codex" then
+		summary = codex_session_summary(bufnr, cwd)
+		if summary then
+			vim.b[bufnr].terminal_name_agent_summary = summary
+			return summary
+		end
+		return nil
 	end
 
 	local titles = {}
