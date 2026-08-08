@@ -62,10 +62,6 @@ if status is-interactive
         coder completion --shell fish --print 2>/dev/null | source
     end
 
-    if type -q wt
-        wt config shell init fish | source
-    end
-
     # Enable zoxide directory jumping when zoxide is installed.
     if type -q zoxide
         zoxide init fish | source
