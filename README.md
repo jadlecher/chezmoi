@@ -1,26 +1,22 @@
 # Dotfiles
 
-Personal Linux configuration managed with [chezmoi](https://www.chezmoi.io/). I use
-this primarily on Gentoo, although most of the configuration is Linux-generic.
-
-Edit files in this chezmoi source tree rather than the live files under `$HOME`.
-Keep machine-local secrets and private assets untracked.
+Personal Linux configuration managed with [chezmoi](https://www.chezmoi.io/).
+Edit files in this source tree rather than the live files under `$HOME`, and
+keep machine-local secrets and private assets untracked.
 
 ## Usage
 
-## Default browser
+See chezmoi's [quick start](https://www.chezmoi.io/quick-start/) for setup and
+the [command overview](https://www.chezmoi.io/user-guide/command-overview/)
+for day-to-day use.
 
-- After each `chezmoi apply`, qutebrowser is selected when it is installed and
-  has a usable XDG desktop entry; Firefox is used as the fallback.
-- The selector uses `xdg-settings` to update the default HTML, HTTP, and HTTPS
-  handlers. If neither supported browser is available, it skips quietly.
-- This is Linux-generic and discovers distribution-specific desktop entry names.
-  Because it runs after every apply, it intentionally re-enforces this choice
-  over manual changes.
+From this source tree:
 
-```bash
-task --list
-task diff
-task apply-dry
-task validate
+```sh
+chezmoi diff       # Preview changes
+chezmoi apply      # Apply changes to $HOME
+task apply-dry     # Preview an apply without changing $HOME
+task validate      # Run the full repository validation
 ```
+
+Run `task --list` to see the available project commands.
