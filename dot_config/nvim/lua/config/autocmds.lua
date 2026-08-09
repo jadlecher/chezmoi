@@ -20,6 +20,40 @@ vim.api.nvim_create_user_command("Redir", function(ctx)
 	vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
 end, { nargs = "+", complete = "command" })
 
+vim.api.nvim_create_autocmd("BufDelete", {
+	group = augroup("dashboard_after_last_buffer"),
+	callback = function(args)
+		if vim.bo[args.buf].filetype == "snacks_dashboard" then
+			return
+		end
+
+		vim.schedule(function()
+			local buffers = vim.fn.getbufinfo({ buflisted = 1 })
+			if #buffers ~= 1 then
+				return
+			end
+
+			local buf = buffers[1].bufnr
+			if not vim.api.nvim_buf_is_valid(buf)
+				or vim.api.nvim_buf_get_name(buf) ~= ""
+				or vim.bo[buf].buftype ~= ""
+				or vim.bo[buf].filetype ~= ""
+				or vim.bo[buf].modified
+				or vim.api.nvim_buf_line_count(buf) ~= 1
+				or vim.api.nvim_buf_get_lines(buf, 0, 1, false)[1] ~= ""
+			then
+				return
+			end
+
+			local win = vim.fn.bufwinid(buf)
+			local snacks = _G.Snacks
+			if win ~= -1 and snacks and snacks.dashboard then
+				snacks.dashboard({ buf = buf, win = win })
+			end
+		end)
+	end,
+})
+
 -- disable line numbers in new terminal buffers
 vim.api.nvim_create_autocmd("TermOpen", {
 	group = augroup("terminal_open"),
