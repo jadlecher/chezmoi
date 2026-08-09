@@ -27,6 +27,10 @@ if status is-interactive
     function prompt_login
     end
 
+    function fish_git_prompt
+        return 1
+    end
+
     alias vi nvim
     alias vim nvim
     alias k kubectl
