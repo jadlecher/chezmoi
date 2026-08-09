@@ -13,12 +13,12 @@
 ## Git worktree workflow
 
 - Treat the primary checkout on `main` as a baseline, not an implementation workspace. Do not create a topic branch there or switch it away from `main`.
-- Before starting new work, `main` may be stale; when it is clean and remote access is available, feel free to synchronize it with `git pull` before creating the implementation worktree.
-- Before starting implementation, inspect `git worktree list`. If the current directory is already a linked worktree, continue there. Otherwise reuse a suitable existing linked worktree for the task; if none exists, create one under the repo's `.worktrees/` directory from `main`:
+- Before creating a new worktree, ensure `origin/main` is current by running `git fetch origin main`. If the fetch fails, do not create the worktree from a potentially stale ref; report the failure instead.
+- Before starting implementation, inspect `git worktree list`. If the current directory is already a linked worktree, continue there. Otherwise reuse a suitable existing linked worktree for the task; if none exists, create one under the repo's `.worktrees/` directory from the latest fetched `origin/main`:
   ```bash
-  git worktree add -b <topic-branch> .worktrees/<topic-branch> main
+  git worktree add -b <topic-branch> .worktrees/<topic-branch> origin/main
   ```
-- If `main` has uncommitted changes, leave them untouched and create the implementation worktree from `main`'s current `HEAD`. Do not reset, stash, move, or copy those changes unless explicitly requested.
+- If `main` has uncommitted changes, leave them untouched and create the implementation worktree from `origin/main`, not `main`'s current `HEAD`. Do not reset, stash, move, or copy those changes unless explicitly requested.
 - Make all edits, tests, validation, and commits in the linked worktree. Use the worktree's branch and path when reporting the result, and do not remove existing worktrees or branches without explicit authorization.
 
 ## Vikunja task tracking
