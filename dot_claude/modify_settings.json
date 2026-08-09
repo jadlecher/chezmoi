@@ -3,13 +3,22 @@
 {{- if ne (trim .chezmoi.stdin) "" -}}
 {{- $current = fromJson .chezmoi.stdin -}}
 {{- end -}}
+{{- $secretsPath := joinPath .chezmoi.homeDir ".config/shell/secrets.local" -}}
+{{- $otelDomain := "" -}}
+{{- if stat $secretsPath -}}
+{{- $otelDomain = trimAll "\"'" (trim (output "awk" "/^[[:space:]]*(export[[:space:]]+)?OTEL_DOMAIN[[:space:]]*=/ { sub(/^[[:space:]]*(export[[:space:]]+)?OTEL_DOMAIN[[:space:]]*=[[:space:]]*/, \"\", $0); print; exit }" $secretsPath)) -}}
+{{- end -}}
+{{- $otelEndpoint := "" -}}
+{{- if ne $otelDomain "" -}}
+{{- $otelEndpoint = printf "https://otel.apps.k8s.infrastructure.lab.%s" $otelDomain -}}
+{{- end -}}
 {{- $managed := `
 {
   "$schema": "https://json.schemastore.org/claude-code-settings.json",
   "env": {
     "BASH_DEFAULT_TIMEOUT_MS": "300000",
     "BASH_MAX_TIMEOUT_MS": "1800000",
-    "OTEL_EXPORTER_OTLP_ENDPOINT": "https://otel.apps.k8s.infrastructure.lab.example.com"
+    "OTEL_EXPORTER_OTLP_ENDPOINT": OTEL_ENDPOINT_PLACEHOLDER
   },
   "attribution": {
     "commit": "",
@@ -47,7 +56,7 @@
   "useAutoModeDuringPlan": true,
   "autoMemoryEnabled": false
 }
-` | fromJson -}}
+` | replace "OTEL_ENDPOINT_PLACEHOLDER" (toJson $otelEndpoint) | fromJson -}}
 {{- $target := deepCopy $current -}}
 {{- $target = mergeOverwrite $target $managed -}}
 {{- if deepEqual $current $target -}}

@@ -1,3 +1,8 @@
+{{- $secretsPath := joinPath .chezmoi.homeDir ".config/shell/secrets.local" -}}
+{{- $ssoDomain := "" -}}
+{{- if stat $secretsPath -}}
+{{- $ssoDomain = trimAll "\"'" (trim (output "awk" "/^[[:space:]]*(export[[:space:]]+)?SSO_DOMAIN[[:space:]]*=/ { sub(/^[[:space:]]*(export[[:space:]]+)?SSO_DOMAIN[[:space:]]*=[[:space:]]*/, \"\", $0); print; exit }" $secretsPath)) -}}
+{{- end -}}
 import importlib
 import pkgutil
 import conf_d
@@ -14,11 +19,13 @@ for module_info in pkgutil.iter_modules(conf_d.__path__):
     if hasattr(module, "apply"):
         module.apply(config, c)
 
-# Configure FreeIPA Kerberos SPNEGO only for the modeled authentik endpoint.
+{{- if ne $ssoDomain "" }}
+# Configure FreeIPA Kerberos SPNEGO only for the modeled SSO endpoint.
 c.qt.args = [
-    "auth-server-allowlist=sso.apps.k8s.infrastructure.lab.example.com",
-    "auth-negotiate-delegate-allowlist=sso.apps.k8s.infrastructure.lab.example.com",
+    "auth-server-allowlist=sso.apps.k8s.infrastructure.lab.{{ $ssoDomain }}",
+    "auth-negotiate-delegate-allowlist=sso.apps.k8s.infrastructure.lab.{{ $ssoDomain }}",
 ]
+{{- end }}
 
 c.tabs.new_position.unrelated = "next"
 c.tabs.new_position.related = "next"
