@@ -37,14 +37,18 @@ if [ -f "$HOME/.config/shell/secrets.local" ]; then
   . "$HOME/.config/shell/secrets.local"
 fi
 
-if [ -n "${AI_CLI_OTEL_INGEST_TOKEN:-}" ] && [ -n "${OTEL_DOMAIN:-}" ]; then
+if [ -n "${AI_CLI_OTEL_INGEST_TOKEN:-}" ] && [ -n "${AI_CLI_OTEL_ENDPOINT:-}" ]; then
   export CLAUDE_CODE_ENABLE_TELEMETRY=1
   export OTEL_METRICS_EXPORTER=otlp
   export OTEL_LOGS_EXPORTER=otlp
   export OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
-  export OTEL_EXPORTER_OTLP_ENDPOINT="https://otel.apps.k8s.infrastructure.lab.${OTEL_DOMAIN}"
+  export OTEL_EXPORTER_OTLP_ENDPOINT="${AI_CLI_OTEL_ENDPOINT}"
   export OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer ${AI_CLI_OTEL_INGEST_TOKEN}"
-  export OTEL_RESOURCE_ATTRIBUTES="service.name=claude-code,deployment.environment=lab,user.name=${USER}"
+  if [ -n "${AI_CLI_OTEL_ENVIRONMENT:-}" ]; then
+    export OTEL_RESOURCE_ATTRIBUTES="service.name=claude-code,deployment.environment=${AI_CLI_OTEL_ENVIRONMENT},user.name=${USER}"
+  else
+    export OTEL_RESOURCE_ATTRIBUTES="service.name=claude-code,user.name=${USER}"
+  fi
 fi
 
 # Add user bin to PATH

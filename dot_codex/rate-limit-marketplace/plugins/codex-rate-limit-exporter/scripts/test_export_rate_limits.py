@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 import sys
 import tempfile
 import unittest
@@ -47,6 +48,24 @@ def iter_points(metrics_payload: dict[str, object]) -> list[tuple[str, dict[str,
 
 
 class ExporterPureTest(unittest.TestCase):
+    def test_resource_attributes_use_configured_environment(self) -> None:
+        with mock.patch.dict(os.environ, {"AI_CLI_OTEL_ENVIRONMENT": "synthetic"}, clear=False):
+            attrs = exporter._resource_attributes()
+
+        self.assertIn(
+            {"key": "deployment.environment", "value": {"stringValue": "synthetic"}},
+            attrs,
+        )
+
+    def test_resource_attributes_omit_unconfigured_environment(self) -> None:
+        with mock.patch.dict(os.environ, {"AI_CLI_OTEL_ENVIRONMENT": ""}, clear=False):
+            attrs = exporter._resource_attributes()
+
+        self.assertNotIn(
+            {"key": "deployment.environment", "value": {"stringValue": "lab"}},
+            attrs,
+        )
+
     def test_build_snapshot_accepts_weekly_only_limit(self) -> None:
         record = {
             "timestamp": "2026-07-31T00:00:00Z",

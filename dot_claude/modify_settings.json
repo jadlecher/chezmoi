@@ -4,14 +4,7 @@
 {{- $current = fromJson .chezmoi.stdin -}}
 {{- end -}}
 {{- $secretsPath := joinPath .chezmoi.homeDir ".config/shell/secrets.local" -}}
-{{- $otelDomain := "" -}}
-{{- if stat $secretsPath -}}
-{{- $otelDomain = trimAll "\"'" (trim (output "awk" "/^[[:space:]]*(export[[:space:]]+)?OTEL_DOMAIN[[:space:]]*=/ { sub(/^[[:space:]]*(export[[:space:]]+)?OTEL_DOMAIN[[:space:]]*=[[:space:]]*/, \"\", $0); print; exit }" $secretsPath)) -}}
-{{- end -}}
-{{- $otelEndpoint := "" -}}
-{{- if ne $otelDomain "" -}}
-{{- $otelEndpoint = printf "https://otel.apps.k8s.infrastructure.lab.%s" $otelDomain -}}
-{{- end -}}
+{{- $otelEndpoint := trimSuffix "/" (includeTemplate "private-secret-value" (dict "path" $secretsPath "name" "AI_CLI_OTEL_ENDPOINT")) -}}
 {{- $managed := `
 {
   "$schema": "https://json.schemastore.org/claude-code-settings.json",

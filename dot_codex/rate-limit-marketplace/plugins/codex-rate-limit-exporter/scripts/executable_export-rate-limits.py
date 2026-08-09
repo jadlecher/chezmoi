@@ -134,10 +134,12 @@ def _post_json(url: str, payload: dict[str, Any], headers: dict[str, str], *, ti
 def _resource_attributes(plan_type: str = "", source_user: str = "") -> list[dict[str, Any]]:
     attrs = [
         {"key": "service.name", "value": {"stringValue": DEFAULT_SERVICE_NAME}},
-        {"key": "deployment.environment", "value": {"stringValue": "lab"}},
         {"key": "source_host", "value": {"stringValue": socket.gethostname()}},
         {"key": "source_user", "value": {"stringValue": source_user or os.environ.get("USER", "unknown")}},
     ]
+    otel_environment = os.environ.get("AI_CLI_OTEL_ENVIRONMENT", "").strip()
+    if otel_environment:
+        attrs.insert(1, {"key": "deployment.environment", "value": {"stringValue": otel_environment}})
     if plan_type:
         attrs.append({"key": "plan_type", "value": {"stringValue": plan_type}})
     return attrs

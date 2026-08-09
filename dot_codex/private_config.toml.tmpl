@@ -1,9 +1,7 @@
 {{- $path := joinPath .chezmoi.homeDir ".codex/config.toml" -}}
 {{- $secretsPath := joinPath .chezmoi.homeDir ".config/shell/secrets.local" -}}
-{{- $otelDomain := "" -}}
-{{- if stat $secretsPath -}}
-{{- $otelDomain = trimAll "\"'" (trim (output "awk" "/^[[:space:]]*(export[[:space:]]+)?OTEL_DOMAIN[[:space:]]*=/ { sub(/^[[:space:]]*(export[[:space:]]+)?OTEL_DOMAIN[[:space:]]*=[[:space:]]*/, \"\", $0); print; exit }" $secretsPath)) -}}
-{{- end }}
+{{- $otelEndpoint := trimSuffix "/" (includeTemplate "private-secret-value" (dict "path" $secretsPath "name" "AI_CLI_OTEL_ENDPOINT")) -}}
+{{- $otelEnvironment := includeTemplate "private-secret-value" (dict "path" $secretsPath "name" "AI_CLI_OTEL_ENVIRONMENT") -}}
 {{- $model := "" -}}
 {{- $modelReasoningEffort := "" -}}
 {{- $planModeReasoningEffort := "" -}}
@@ -63,13 +61,15 @@ hide_rate_limit_model_nudge = true
 {{- if ne (trim $migrations) "" }}
 {{ trim $migrations }}
 {{- end }}
-{{- if ne $otelDomain "" }}
+{{- if ne $otelEndpoint "" }}
 [otel]
-environment = "lab"
+{{ if ne $otelEnvironment "" }}
+environment = "{{ $otelEnvironment }}"
+{{ end }}
 log_user_prompt = false
 
 [otel.exporter]
-otlp-http = { endpoint = "https://otel.apps.k8s.infrastructure.lab.{{ $otelDomain }}/v1/logs", protocol = "binary" }
+otlp-http = { endpoint = "{{ $otelEndpoint }}/v1/logs", protocol = "binary" }
 {{- end }}
 
 [marketplaces.personal-codex-hooks]
